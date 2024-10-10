@@ -1,12 +1,15 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
 # Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+*_rpi64	# ignore executables for the Raspberry Pi with 64bit OS
+*_imac	# ignore executables for Intel Mac
+*_amac	# ignore executables for ARM Mac
+*_ilin	# ignore executables for Intel Linux
+*.sh
+Makefile
 
 # Test binary, built with `go test -c`
 *.test
@@ -15,11 +18,13 @@
 *.out
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
+vendor/
+.DS_Store
+.vscode/launch.json
 
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
+# AiGo
+Systemconfig.json
+go.mod
+go.sum
+serviceRegistry.db
+*.pem
