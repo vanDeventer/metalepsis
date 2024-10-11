@@ -464,14 +464,9 @@ func deleteCompleteServiceById(rsc *UnitAsset, serviceId int) error {
 func findServices(rsc *UnitAsset, serviceDescription forms.ServiceQuest_v1) ([]forms.ServiceRecord_v1, error) {
 	query := `
 		SELECT Id FROM Services 
-		WHERE Definition = ? 
-		AND Id IN (
-			SELECT ServiceId FROM ServicesXPP 
-			WHERE ProtoPortId IN (
-				SELECT Id FROM ProtoPorts WHERE Proto = ?
-			)
-		)`
-	params := []interface{}{serviceDescription.ServiceDefinition, serviceDescription.Protocol}
+		WHERE Definition = ?`
+	params := []interface{}{serviceDescription.ServiceDefinition}
+
 	for key, values := range serviceDescription.Details {
 		for _, value := range values {
 			query += `
@@ -482,11 +477,17 @@ func findServices(rsc *UnitAsset, serviceDescription forms.ServiceQuest_v1) ([]f
 						WHERE DetailKey = ? AND DetailValue = ?
 					)
 				)`
+			// Add both DetailKey and DetailValue to the params for each condition
 			params = append(params, key, value)
 		}
 	}
+
+	// Debugging: Print the query and params to verify them
+	fmt.Printf("Query: %s\nParams: %v\n", query, params)
+
 	rsc.mtx.RLock()
 	defer rsc.mtx.RUnlock()
+
 	rows, err := rsc.db.Query(query, params...)
 	if err != nil {
 		return nil, err
@@ -505,6 +506,7 @@ func findServices(rsc *UnitAsset, serviceDescription forms.ServiceQuest_v1) ([]f
 		}
 		serviceRecords = append(serviceRecords, *record)
 	}
+	fmt.Printf("The service records are %v+\n", serviceRecords)
 	return serviceRecords, rows.Err()
 }
 

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/sdoque/mbaigo/components"
+	"github.com/sdoque/mbaigo/forms"
 	"github.com/sdoque/mbaigo/usecases"
 )
 
@@ -195,31 +196,47 @@ func (ua *UnitAsset) queryDB(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		newQuest, err := usecases.ExtractQuestForm(bodyBytes)
+		questForm, err := usecases.Unpack(bodyBytes, headerContentType)
 		if err != nil {
-			log.Printf("Error extracting query request: %v", err)
-			http.Error(w, "Bad Request", http.StatusBadRequest)
+			log.Printf("error extracting the discovery request %v\n", err)
+		}
+		// Perform a type assertion to convert the returned Form to SignalA_v1a
+		qf, ok := questForm.(*forms.ServiceQuest_v1)
+		if !ok {
+			fmt.Println("Problem unpacking the service discovery request form")
 			return
 		}
+		fmt.Printf("The service discovery request form is %v\n", qf)
 
-		// Process request
-		discoveryList, err := findServices(ua, newQuest)
+		// Process request and get a copy of the availavle services in a list of ServiceRecords
+		discoveryList, err := findServices(ua, *qf)
 		if err != nil {
 			log.Printf("Error querying the Service Registry: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
-		jform, err := usecases.FillDiscoveredServices(discoveryList, "ServiceRecordList_v1")
+		// fill out the form that has the list of services that fit the request
+		dsListForm, err := usecases.FillDiscoveredServices(discoveryList, "ServiceRecordList_v1")
+		if err != nil {
+			log.Println("service record processing error")
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		// package up the list into a byte array
+		payload, err := usecases.Pack(dsListForm, headerContentType)
 		if err != nil {
 			log.Println("Discovery marshalling error")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+		fmt.Printf("The list of discovered services is %v+\n", dsListForm)
 
-		w.Header().Set("Content-Type", "application/json")
+		// send off the list back to the Orchestrator
+		w.Header().Set("Content-Type", headerContentType)
 		w.WriteHeader(http.StatusOK)
-		_, err = w.Write(jform)
+		_, err = w.Write(payload)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
