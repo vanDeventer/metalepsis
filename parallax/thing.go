@@ -114,7 +114,6 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 	ua.rPi_Pin.DutyCycle(620, 20_000) // 0°
 
 	// start the unit asset(s)
-	// Start a single goroutine to update ua.temperature from ua.TempChan
 	go func() {
 		for pulseWidth := range ua.dutyChan {
 			fmt.Printf("Pulse width updated: %v\n", pulseWidth)
@@ -149,7 +148,9 @@ func (ua *UnitAsset) getPosition() (f forms.SignalA_v1a) {
 
 // setPosition update the PWM pulse size based on the requested position [0-100]%
 func (ua *UnitAsset) setPosition(f forms.SignalA_v1a) {
-	fmt.Printf("The new position is %+v\n", f)
+	if ua.position != int(f.Value) {
+		log.Printf("The new position is %+v\n", f)
+	}
 
 	// Limit the value directly within the assignment to rsc.position
 	position := int(f.Value)

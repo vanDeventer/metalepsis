@@ -37,13 +37,14 @@ type UnitAsset struct {
 	sigIn usecases.RSignal
 	// sigFilt float64
 	// sigErr  float64
-	sigOut usecases.RSignal
-	jitter time.Duration
-	Setpt  float64       `json:"setpoint"`
-	Period time.Duration `json:"samplingPeriod"`
-	Kp     float64       `json:"kp"`
-	Lambda float64       `json:"lamda"`
-	Ki     float64       `json:"ki"`
+	sigOut    usecases.RSignal
+	jitter    time.Duration
+	Setpt     float64       `json:"setpoint"`
+	Period    time.Duration `json:"samplingPeriod"`
+	Kp        float64       `json:"kp"`
+	Lambda    float64       `json:"lamda"`
+	Ki        float64       `json:"ki"`
+	previousT float64
 }
 
 // GetName returns the name of the Resource.
@@ -118,8 +119,22 @@ func initTemplate() components.UnitAsset {
 
 // newResource creates the Resource resource with its pointers and channels based on the configuration using the tConig structs
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {
-	// var ua components.UnitAsset // this is an interface, which we then initialize
-	ua := &UnitAsset{ // this is an interface, which we then initialize
+	// deterimine the protocols that the system supports
+	sProtocols := components.SProtocols(sys.Husk.ProtoPort)
+	// instantiate the consumed services
+	t := &components.Cervice{
+		Name:   "temperature",
+		Protos: sProtocols,
+		Url:    make([]string, 0),
+	}
+
+	r := &components.Cervice{
+		Name:   "rotation",
+		Protos: sProtocols,
+		Url:    make([]string, 0),
+	}
+	// intantiate the unit asset
+	ua := &UnitAsset{
 		Name:        uac.Name,
 		Owner:       sys,
 		Details:     uac.Details,
@@ -129,6 +144,10 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 		Kp:          uac.Kp,
 		Lambda:      uac.Lambda,
 		Ki:          uac.Ki,
+		CervicesMap: components.Cervices{
+			t.Name: t,
+			r.Name: r,
+		},
 	}
 	ua.sigIn.Unit = "Celsius"
 	ua.sigIn.QuestForm = usecases.FillQuestForm(sys, ua, "temperature", "http")
@@ -137,8 +156,19 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 	ua.sigOut.Unit = "Percent"
 	ua.sigOut.QuestForm = usecases.FillQuestForm(sys, ua, "rotation", "http")
 	ua.sigOut.Sys = sys
-	// start the unit asset(s)
+	var ref components.Service
+	for _, s := range servs {
+		if s.Definition == "setpoint" {
+			ref = s
+		}
+	}
+	// ua.tunit = ref.Details["unit"][0]
+	ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, ref.Details)
+	ua.CervicesMap["rotation"].Details = components.MergeDetails(ua.Details, map[string][]string{"Unit": {"Percent"}, "Forms": {"SignalA_v1a"}})
+	fmt.Printf("\nThe consumed services are %v+\n", ua.CervicesMap["temperature"])
+	fmt.Printf("\nThe unit asset is: %v+/\n", ua)
 
+	// start the unit asset(s)
 	go ua.feedbackLoop(sys.Ctx)
 
 	return ua, func() {
@@ -160,6 +190,7 @@ func (ua *UnitAsset) getSetPoint() (f forms.SignalA_v1a) {
 // setSetPoint updates the thermal setpoint
 func (ua *UnitAsset) setSetPoint(f forms.SignalA_v1a) {
 	ua.Setpt = f.Value
+	log.Printf("new set point: %.1f", f.Value)
 }
 
 // getErrror fills out a signal form with the currrent thermal setpoint and temperature
@@ -201,34 +232,58 @@ func (ua *UnitAsset) feedbackLoop(ctx context.Context) {
 func (ua *UnitAsset) processFeedbackLoop() {
 	jitterStart := time.Now()
 
-	v, err := ua.sigIn.GetValue()
+	// get the current temperature
+	tf, err := usecases.GetState(ua.CervicesMap["temperature"], ua.Owner)
 	if err != nil {
-		fmt.Printf("thermostat-feedback: could not get input signal: %s\n", err)
+		fmt.Printf("\n We have a getState error: %s", err)
+	}
+	// Perform a type assertion to convert the returned Form to SignalA_v1a
+	tup, ok := tf.(*forms.SignalA_v1a)
+	if !ok {
+		fmt.Println("Problem unpacking the service discovery request form")
 		return
 	}
 
-	deviation := ua.Setpt - v
+	// perform the control algorithm
+	deviation := ua.Setpt - tup.Value
 	output := ua.calculateOutput(deviation)
 
-	// limit the output between 0 and 100%
-	if output < 0 {
-		output = 0
-	} else if output > 100 {
-		output = 100
-	}
+	// prepare the form to send
+	var of forms.SignalA_v1a
+	of.NewForm()
+	of.Value = output
+	of.Unit = ua.CervicesMap["rotation"].Details["Unit"][0]
+	of.Timestamp = time.Now()
 
-	err = ua.sigOut.UpdateValue(output)
+	// pack the new valve state form
+	op, err := usecases.Pack(&of, "application/json")
+	if err != nil {
+		return
+	}
+	// send the new valve state request
+	err = usecases.SetState(ua.CervicesMap["rotation"], ua.Owner, op)
 	if err != nil {
 		fmt.Printf("thermostat-feedback: could not update output signal: %s\n", err)
 		return
 	}
 
-	fmt.Printf("Temperature %.2f °C with error %.2f°C and actuator at %.2f%%\n", v, deviation, output)
+	if tup.Value != ua.previousT {
+		log.Printf("Temperature %.2f °C with error %.2f°C and actuator at %.2f%%\n", tup.Value, deviation, output)
+		ua.previousT = tup.Value
+	}
 
 	ua.jitter = time.Since(jitterStart)
 }
 
-// calculateOutput is the actual P contoroller
+// calculateOutput is the actual P contoroller (no real close loop yet)
 func (ua *UnitAsset) calculateOutput(thermDiff float64) float64 {
-	return ua.Kp*thermDiff + 50 // if the error is 0, the position is at 50%
+	vPosition := ua.Kp*thermDiff + 50 // if the error is 0, the position is at 50%
+
+	// limit the output between 0 and 100%
+	if vPosition < 0 {
+		vPosition = 0
+	} else if vPosition > 100 {
+		vPosition = 100
+	}
+	return vPosition
 }

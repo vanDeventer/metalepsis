@@ -463,23 +463,25 @@ func deleteCompleteServiceById(rsc *UnitAsset, serviceId int) error {
 // findServices finds services based on the provided service description.
 func findServices(rsc *UnitAsset, serviceDescription forms.ServiceQuest_v1) ([]forms.ServiceRecord_v1, error) {
 	query := `
-		SELECT Id FROM Services 
+		SELECT Id FROM Services
 		WHERE Definition = ?`
 	params := []interface{}{serviceDescription.ServiceDefinition}
 
-	for key, values := range serviceDescription.Details {
-		for _, value := range values {
-			query += `
-				AND Id IN (
-					SELECT ServiceId FROM ServicesXDetails 
-					WHERE DetailId IN (
-						SELECT Id FROM Details 
-						WHERE DetailKey = ? AND DetailValue = ?
-					)
-				)`
-			// Add both DetailKey and DetailValue to the params for each condition
-			params = append(params, key, value)
+	// If there are details to filter by, we add conditions for them
+	if len(serviceDescription.Details) > 0 {
+		query += " AND Id IN (SELECT ServiceId FROM ServicesXDetails WHERE DetailId IN (SELECT Id FROM Details WHERE"
+		first := true
+		for key, values := range serviceDescription.Details {
+			for _, value := range values {
+				if !first {
+					query += " OR "
+				}
+				query += " (DetailKey = ? AND DetailValue = ?)"
+				params = append(params, key, value)
+				first = false
+			}
 		}
+		query += "))"
 	}
 
 	// Debugging: Print the query and params to verify them
