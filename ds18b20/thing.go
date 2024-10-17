@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -147,27 +146,27 @@ func (ua *UnitAsset) readTemperature(ctx context.Context) {
 			for {
 				rawData, err = os.ReadFile(deviceFile)
 				if err != nil {
-					fmt.Printf("Error reading temperature file: %s, error: %v\n", deviceFile, err)
+					log.Printf("error reading temperature file: %s, error: %v\n", deviceFile, err)
 					return
 				}
 
 				if len(rawData) > 0 {
 					break // exit the loop if data is successfully read
 				}
-				fmt.Printf("Empty data read from temperature file: %s, retrying...\n", deviceFile)
+				log.Printf("empty data read from temperature file: %s, retrying...\n", deviceFile)
 				time.Sleep(1 * time.Second) // wait before retrying
 			}
 
 			// parse the raw temperature value
 			rawValue := strings.Split(string(rawData), "\n")[1]
 			if !strings.Contains(rawValue, "t=") {
-				fmt.Println("Invalid temperature data: %", rawData)
+				log.Println("invalid temperature data: %", rawData)
 				return // and exit the goroutine
 			}
 			tempStr := strings.Split(rawValue, "t=")[1]
 			temp, err := strconv.ParseFloat(tempStr, 64)
 			if err != nil {
-				fmt.Println("Error reading temperature:", err)
+				log.Println("error reading temperature:", err)
 				return // and exit the goroutine
 			}
 			select {

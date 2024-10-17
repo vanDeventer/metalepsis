@@ -117,6 +117,8 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 	defer cancel()
 	sys := ua.Owner
 	if ua.leadingRegistrar != nil {
+
+		// verify that this leading registrar is still leading
 		resp, errs := http.Get(ua.leadingRegistrar.Url + "/status")
 		if errs != nil {
 			log.Println("lost leading registrar status:", errs)
@@ -135,6 +137,7 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 			return // Skip to the next iteration of the loop
 		}
 
+		// reset the pointer if the registrar lost its leading status
 		if !strings.HasPrefix(string(bodyBytes), "lead Service Registrar since") {
 			ua.leadingRegistrar = nil
 			log.Println("lost previous leading registrar")
@@ -201,6 +204,12 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 		log.Print("Error extracting discoverry reply", err)
 		return servLoc, err
 	}
+	if len(serviceList.List) == 0 {
+		err = fmt.Errorf("unable to locate any such service: %s", newQuest.ServiceDefinition)
+		return
+	}
+
+	fmt.Printf("/n the length of the service list is: %d\n", len(serviceList.List))
 	serviceLocation := selectService(serviceList)
 	payload, err := json.MarshalIndent(serviceLocation, "", "  ")
 	fmt.Printf("the service location is %+v\n", serviceLocation)

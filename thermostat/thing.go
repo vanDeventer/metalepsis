@@ -15,7 +15,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
@@ -34,16 +33,13 @@ type UnitAsset struct {
 	ServicesMap components.Services `json:"-"`
 	CervicesMap components.Cervices `json:"-"`
 	//
-	sigIn usecases.RSignal
-	// sigFilt float64
-	// sigErr  float64
-	sigOut    usecases.RSignal
 	jitter    time.Duration
 	Setpt     float64       `json:"setpoint"`
 	Period    time.Duration `json:"samplingPeriod"`
 	Kp        float64       `json:"kp"`
 	Lambda    float64       `json:"lamda"`
 	Ki        float64       `json:"ki"`
+	deviation float64
 	previousT float64
 }
 
@@ -77,7 +73,7 @@ func initTemplate() components.UnitAsset {
 	setPointService := components.Service{
 		Definition:  "setpoint",
 		SubPath:     "setpoint",
-		Details:     map[string][]string{"Unit": {"Celcius"}, "Forms": {"SignalA_v1a"}},
+		Details:     map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}},
 		RegPeriod:   120,
 		CUnit:       "Eur/kWh",
 		Description: "provides the current thermal setpoint (GET) or sets it (PUT)",
@@ -85,7 +81,7 @@ func initTemplate() components.UnitAsset {
 	thermalErrorService := components.Service{
 		Definition:  "thermalerror",
 		SubPath:     "thermalerror",
-		Details:     map[string][]string{"Unit": {"Celcius"}, "Forms": {"SignalA_v1a"}},
+		Details:     map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}},
 		RegPeriod:   120,
 		Description: "provides the current difference between the setpoint and the temperature (GET)",
 	}
@@ -149,24 +145,16 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 			r.Name: r,
 		},
 	}
-	ua.sigIn.Unit = "Celsius"
-	ua.sigIn.QuestForm = usecases.FillQuestForm(sys, ua, "temperature", "http")
-	ua.sigIn.Sys = sys
-	fmt.Printf("the desired service is: %v+\n", ua.sigIn)
-	ua.sigOut.Unit = "Percent"
-	ua.sigOut.QuestForm = usecases.FillQuestForm(sys, ua, "rotation", "http")
-	ua.sigOut.Sys = sys
+
 	var ref components.Service
 	for _, s := range servs {
 		if s.Definition == "setpoint" {
 			ref = s
 		}
 	}
-	// ua.tunit = ref.Details["unit"][0]
+
 	ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, ref.Details)
 	ua.CervicesMap["rotation"].Details = components.MergeDetails(ua.Details, map[string][]string{"Unit": {"Percent"}, "Forms": {"SignalA_v1a"}})
-	fmt.Printf("\nThe consumed services are %v+\n", ua.CervicesMap["temperature"])
-	fmt.Printf("\nThe unit asset is: %v+/\n", ua)
 
 	// start the unit asset(s)
 	go ua.feedbackLoop(sys.Ctx)
@@ -196,7 +184,7 @@ func (ua *UnitAsset) setSetPoint(f forms.SignalA_v1a) {
 // getErrror fills out a signal form with the currrent thermal setpoint and temperature
 func (ua *UnitAsset) getError() (f forms.SignalA_v1a) {
 	f.NewForm()
-	f.Value = ua.Setpt - ua.sigIn.Value
+	f.Value = ua.deviation
 	f.Unit = "Celsius"
 	f.Timestamp = time.Now()
 	return f
@@ -235,18 +223,19 @@ func (ua *UnitAsset) processFeedbackLoop() {
 	// get the current temperature
 	tf, err := usecases.GetState(ua.CervicesMap["temperature"], ua.Owner)
 	if err != nil {
-		fmt.Printf("\n We have a getState error: %s", err)
+		log.Printf("\n unable to obtain a temperature reading error: %s\n", err)
+		return
 	}
 	// Perform a type assertion to convert the returned Form to SignalA_v1a
 	tup, ok := tf.(*forms.SignalA_v1a)
 	if !ok {
-		fmt.Println("Problem unpacking the service discovery request form")
+		log.Println("problem unpacking the temperature signal form")
 		return
 	}
 
 	// perform the control algorithm
-	deviation := ua.Setpt - tup.Value
-	output := ua.calculateOutput(deviation)
+	ua.deviation = ua.Setpt - tup.Value
+	output := ua.calculateOutput(ua.deviation)
 
 	// prepare the form to send
 	var of forms.SignalA_v1a
@@ -263,12 +252,12 @@ func (ua *UnitAsset) processFeedbackLoop() {
 	// send the new valve state request
 	err = usecases.SetState(ua.CervicesMap["rotation"], ua.Owner, op)
 	if err != nil {
-		fmt.Printf("thermostat-feedback: could not update output signal: %s\n", err)
+		log.Printf("cannot update valve state: %s\n", err)
 		return
 	}
 
 	if tup.Value != ua.previousT {
-		log.Printf("Temperature %.2f °C with error %.2f°C and actuator at %.2f%%\n", tup.Value, deviation, output)
+		log.Printf("the temperature is %.2f °C with an error %.2f°C and valve set at %.2f%%\n", tup.Value, ua.deviation, output)
 		ua.previousT = tup.Value
 	}
 

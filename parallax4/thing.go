@@ -18,12 +18,9 @@ import (
 	"log"
 	"time"
 
-	"periph.io/x/conn/v3/gpio"
-	"periph.io/x/host/v3"
-	"periph.io/x/host/v3/rpi"
-
 	"github.com/sdoque/mbaigo/components"
 	"github.com/sdoque/mbaigo/forms"
+	"github.com/stianeikeland/go-rpio/v4"
 )
 
 //-------------------------------------Define the unit asset
@@ -36,9 +33,10 @@ type UnitAsset struct {
 	ServicesMap components.Services `json:"-"`
 	CervicesMap components.Cervices `json:"-"`
 	//
-	GpioPin  gpio.PinIO `json:"-"`
-	position int        `json:"-"`
-	dutyChan chan int   `json:"-"`
+	GpioPin  int      `json:"gpiopin"`
+	rPi_Pin  rpio.Pin `json:"-"`
+	position int      `json:"-"`
+	dutyChan chan int `json:"-"`
 }
 
 // GetName returns the name of the Resource.
@@ -61,7 +59,7 @@ func (ua *UnitAsset) GetDetails() map[string][]string {
 	return ua.Details
 }
 
-// ensure UnitAsset implements components.UnitAsset
+// ensure UnitAsset implements components.UnitAsset (this check is done at during the compilation)
 var _ components.UnitAsset = (*UnitAsset)(nil)
 
 //-------------------------------------Instatiate a unit asset template
@@ -82,49 +80,50 @@ func initTemplate() components.UnitAsset {
 		Name:    "Servo_1",
 		Details: map[string][]string{"Model": {"standard servo", "-90 to +90 degrees"}, "Location": {"Kitchen"}},
 		ServicesMap: components.Services{
-			rotation.SubPath: &rotation, // Inline assignment of the rotation service
+			rotation.SubPath: &rotation, // Inline assignment of the temperature service
 		},
+		GpioPin: 18,
 	}
 	return uat
 }
 
 //-------------------------------------Instatiate the unit assets based on configuration
 
-// newResource creates the Resource resource with its pointers and channels based on the configuration using the tConfig structs
+// newResource creates the Resource resource with its pointers and channels based on the configuration using the tConig structs
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {
-	// ua components.UnitAsset is an interface, which is implemented and initialized
+	// ua components.UnitAsset is an interface, which is implemneted and initialized
 	ua := &UnitAsset{
 		Name:        uac.Name,
 		Owner:       sys,
 		Details:     uac.Details,
 		ServicesMap: components.CloneServices(servs),
+		GpioPin:     uac.GpioPin,
 		dutyChan:    make(chan int),
 	}
+	// Initialize the GPIO pin
+	if err := rpio.Open(); err != nil {
+		log.Fatalf("Failed to open GPIO %s\n", err)
+		return ua, func() {
 
-	// Initialize the periph.io host
-	if _, err := host.Init(); err != nil {
-		log.Fatalf("Failed to initialize periph: %v\n", err)
-		return ua, func() {}
+		}
 	}
+	ua.rPi_Pin = rpio.Pin(ua.GpioPin)
+	ua.rPi_Pin.Output()
+	ua.rPi_Pin.Mode(rpio.Pwm)
+	ua.rPi_Pin.Freq(1_000_000)        // µs in one s
+	ua.rPi_Pin.DutyCycle(620, 20_000) // 0°
 
-	// Access GPIO pin 18 (Pin 12 on Raspberry Pi header)
-	ua.GpioPin = rpi.P1_12
-	ua.GpioPin.Out(gpio.Low)
-
-	// Initialize with a neutral position (90°)
-	setServoDutyCycle(ua.GpioPin, 1520) // Set 1520 µs for neutral (90°)
-
-	// Start the unit asset(s)
+	// start the unit asset(s)
 	go func() {
 		for pulseWidth := range ua.dutyChan {
-			fmt.Printf("Pulse width updated: %v µs\n", pulseWidth)
-			setServoDutyCycle(ua.GpioPin, pulseWidth) // Adjusting to the new pulse width
+			fmt.Printf("Pulse width updated: %v\n", pulseWidth)
+			ua.rPi_Pin.DutyCycle(uint32(pulseWidth), 20_000) // Adjusting to the new pulse width
 		}
 	}()
 
 	return ua, func() {
 		log.Println("disconnecting from servos")
-		ua.GpioPin.Out(gpio.Low)
+		rpio.Close()
 	}
 }
 
@@ -138,7 +137,7 @@ const (
 	maxPulseWidth    = 2420
 )
 
-// getPosition provides an analog signal for the servo position in percent and a timestamp
+// getPosition provides an analog signal form fit the srevo position in percent and a timestamp
 func (ua *UnitAsset) getPosition() (f forms.SignalA_v1a) {
 	f.NewForm()
 	f.Value = float64(ua.position)
@@ -147,7 +146,7 @@ func (ua *UnitAsset) getPosition() (f forms.SignalA_v1a) {
 	return f
 }
 
-// setPosition updates the PWM pulse size based on the requested position [0-100]%
+// setPosition update the PWM pulse size based on the requested position [0-100]%
 func (ua *UnitAsset) setPosition(f forms.SignalA_v1a) {
 	if ua.position != int(f.Value) {
 		log.Printf("The new position is %+v\n", f)
@@ -160,26 +159,11 @@ func (ua *UnitAsset) setPosition(f forms.SignalA_v1a) {
 	} else if position > 100 {
 		position = 100
 	}
-	ua.position = position // Position is now guaranteed to be in the 0-100% range
+	ua.position = position // Position is now guaranteed to be in the 0-100 % range
 
 	// Calculate the width based on the position, scaled to pulse width range
 	width := (ua.position * (maxPulseWidth - minPulseWidth) / 100) + minPulseWidth
 
 	// Send the calculated width to the duty cycle channel
 	ua.dutyChan <- width
-}
-
-// setServoDutyCycle sets the duty cycle on the given GPIO pin using the pulse width in microseconds.
-func setServoDutyCycle(pin gpio.PinIO, pulseWidth int) {
-	// Calculate the time duration for the pulse width
-	onDuration := time.Duration(pulseWidth) * time.Microsecond
-	offDuration := time.Duration(20000-pulseWidth) * time.Microsecond // 20ms period minus the pulse width
-
-	// Set pin high for pulse width duration
-	pin.Out(gpio.High)
-	time.Sleep(onDuration)
-
-	// Set pin low for the rest of the period
-	pin.Out(gpio.Low)
-	time.Sleep(offDuration)
 }

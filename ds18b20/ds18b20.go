@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -39,7 +38,7 @@ func main() {
 	// instatiate the husk
 	sys.Husk = &components.Husk{
 		Description: "reads the temperature from 1-wire sensors",
-		Details:     map[string][]string{"Developer": {"Arrowhead"}},
+		Details:     map[string][]string{"Developer": {"Synecdoque"}},
 		ProtoPort:   map[string]int{"https": 8691, "http": 8690, "coap": 0},
 		InfoLink:    "https://github.com/sdoque/systems/tree/master/ds18b20",
 	}
@@ -52,13 +51,13 @@ func main() {
 	// Configure the system
 	rawResources, servsTemp, err := usecases.Configure(&sys)
 	if err != nil {
-		log.Fatalf("Configuration error: %v\n", err)
+		log.Fatalf("configuration error: %v\n", err)
 	}
 	sys.UAssets = make(map[string]*components.UnitAsset) // clear the unit asset map (from the template)
 	for _, raw := range rawResources {
 		var uac UnitAsset
 		if err := json.Unmarshal(raw, &uac); err != nil {
-			log.Fatalf("Resource configuration error: %+v\n", err)
+			log.Fatalf("resource configuration error: %+v\n", err)
 		}
 		ua, cleanup := newResource(uac, &sys, servsTemp)
 		defer cleanup()
@@ -76,7 +75,7 @@ func main() {
 
 	// wait for shutdown signal, and gracefully close properly goroutines with context
 	<-sys.Sigs // wait for a SIGINT (Ctrl+C) signal
-	fmt.Println("\nshuting down system", sys.Name)
+	log.Println("\nshuting down system", sys.Name)
 	cancel()                    // cancel the context, signaling the goroutines to stop
 	time.Sleep(2 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
 }

@@ -485,7 +485,7 @@ func findServices(rsc *UnitAsset, serviceDescription forms.ServiceQuest_v1) ([]f
 	}
 
 	// Debugging: Print the query and params to verify them
-	fmt.Printf("Query: %s\nParams: %v\n", query, params)
+	// fmt.Printf("Query: %s\nParams: %v\n", query, params)
 
 	rsc.mtx.RLock()
 	defer rsc.mtx.RUnlock()
@@ -508,7 +508,7 @@ func findServices(rsc *UnitAsset, serviceDescription forms.ServiceQuest_v1) ([]f
 		}
 		serviceRecords = append(serviceRecords, *record)
 	}
-	fmt.Printf("The service records are %v+\n", serviceRecords)
+
 	return serviceRecords, rows.Err()
 }
 
