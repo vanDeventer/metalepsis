@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -113,10 +114,10 @@ func (ua *UnitAsset) updateDB(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case "POST", "PUT":
-		headerContentTtype := r.Header.Get("Content-Type")
-		if !strings.Contains(headerContentTtype, "application/json") {
-			log.Printf("content Type is not application/json %v", http.StatusUnsupportedMediaType)
-			// XML will be handled later
+		contentType := r.Header.Get("Content-Type")
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			fmt.Println("Error parsing media type:", err)
 			return
 		}
 		defer r.Body.Close()
@@ -125,34 +126,43 @@ func (ua *UnitAsset) updateDB(w http.ResponseWriter, r *http.Request) {
 			log.Printf("error reading registration request body: %v", err)
 			return
 		}
-		newRecord, err := usecases.ServRegReqExtract(bodyBytes)
+
+		regRec, err := usecases.Unpack(bodyBytes, mediaType)
 		if err != nil {
-			log.Print("error extracting registration request", err)
+			log.Printf("error extracting the registration record relpy %v\n", err)
+		}
+
+		// Perform a type assertion to convert the returned Form to ServiceRecord_v1
+		newRecord, ok := regRec.(*forms.ServiceRecord_v1)
+		if !ok {
+			fmt.Println("error extracting registration request")
+			return
 		}
 
 		// Process request ////////////////////////////////////////////////////
 
 		if newRecord.Id == 0 {
-			err = registerService(ua, &newRecord) // insert the new record into the database
+			err = registerService(ua, newRecord) // insert the new record into the database
 			log.Printf("the new service %s from system %s has been registered\n", newRecord.ServiceDefinition, newRecord.SystemName)
 			if err != nil {
 				log.Println(err)
 			}
 		} else {
-			err = extendServiceValidity(ua, &newRecord)
+			err = extendServiceValidity(ua, newRecord)
 			if err != nil {
-				err = registerService(ua, &newRecord) // insert the new record into the database since the "existing" record was not found
+				err = registerService(ua, newRecord) // insert the new record into the database since the "existing" record was not found
 				log.Printf("the service %s from system %s has been re-registered\n", newRecord.ServiceDefinition, newRecord.SystemName)
 				if err != nil {
 					log.Println(err)
 				}
 			}
 		}
-		jform, err := usecases.ServRegRespFillIn(newRecord, "ServiceRecord_v1")
+
+		jform, err := usecases.Pack(newRecord, mediaType)
 		if err != nil {
 			log.Println("registration marshall error")
 		}
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", mediaType)
 		w.WriteHeader(http.StatusOK)
 		_, err = w.Write(jform)
 		if err != nil {
@@ -181,7 +191,7 @@ func (ua *UnitAsset) queryDB(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(text))
 
 	case "POST":
-		// Handle POST request - with a JSON payload
+		// Handle POST request - with a JSON payload from the Orchestrator
 		headerContentType := r.Header.Get("Content-Type")
 		if !strings.Contains(headerContentType, "application/json") {
 			http.Error(w, "Unsupported Media Type", http.StatusUnsupportedMediaType)
