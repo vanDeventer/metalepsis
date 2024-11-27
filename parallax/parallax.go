@@ -37,8 +37,8 @@ func main() {
 	sys.Husk = &components.Husk{
 		Description: " provides a rotation service using a standard servo motor driven with PWM",
 		Details:     map[string][]string{"Developer": {"Arrowhead"}},
-		ProtoPort:   map[string]int{"https": 0, "http": 8693, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/mbaigo/tree/master/parallax",
+		ProtoPort:   map[string]int{"https": 0, "http": 20151, "coap": 0},
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/parallax",
 	}
 
 	// instantiate a template unit asset

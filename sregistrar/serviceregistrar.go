@@ -44,7 +44,7 @@ func main() {
 		Description: "is an Arrowhead mandatory core sysstem that keeps track of the currently available sevices.",
 		Details:     map[string][]string{"Developer": {"Arrowhead"}},
 		ProtoPort:   map[string]int{"https": 0, "http": 8443, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/master/serviceregistrar",
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/sregistrar",
 	}
 
 	// instantiate a template unit asset

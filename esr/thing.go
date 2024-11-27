@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -260,7 +261,7 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 				continue
 			}
 			fmt.Printf("\nThe service quest form is %v\n\n", qform)
-			matchingRecords := ua.FilterByServiceDefinition(qform.ServiceDefinition)
+			matchingRecords := ua.FilterByServiceDefinitionAndDetails(qform.ServiceDefinition, qform.Details)
 			request.Result <- matchingRecords
 
 		case "delete":
@@ -274,17 +275,51 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 	}
 }
 
-// FilterByServiceDefinition returns a list of services with the given service definition
-func (ua *UnitAsset) FilterByServiceDefinition(desiredDefinition string) []forms.ServiceRecord_v1 {
-	ua.mu.Lock() // Lock to ensure thread safety while accessing serviceRegistry
+// FilterByServiceDefinitionAndDetails returns a list of services with the given service definition and details TODO: protocols
+func (ua *UnitAsset) FilterByServiceDefinitionAndDetails(desiredDefinition string, requiredDetails map[string][]string) []forms.ServiceRecord_v1 {
+	ua.mu.Lock() // Ensure thread safety
 	defer ua.mu.Unlock()
 
 	var matchingRecords []forms.ServiceRecord_v1
+
 	for _, record := range ua.serviceRegistry {
 		if record.ServiceDefinition == desiredDefinition {
-			matchingRecords = append(matchingRecords, record)
+			matchesAllDetails := true
+
+			// Check if all required details match
+			for key, values := range requiredDetails {
+				recordValues, exists := record.Details[key]
+				if !exists {
+					matchesAllDetails = false
+					break
+				}
+
+				// Ensure at least one value in requiredDetails matches record.Details
+				valueMatch := false
+				for _, requiredValue := range values {
+					for _, recordValue := range recordValues {
+						if recordValue == requiredValue {
+							valueMatch = true
+							break
+						}
+					}
+					if valueMatch {
+						break
+					}
+				}
+
+				if !valueMatch {
+					matchesAllDetails = false
+					break
+				}
+			}
+
+			if matchesAllDetails {
+				matchingRecords = append(matchingRecords, record)
+			}
 		}
 	}
+
 	return matchingRecords
 }
 
@@ -306,4 +341,37 @@ func checkExpiration(ua *UnitAsset, servId int) {
 			log.Printf("The service with ID %d has been deleted because it was not renewed.", servId)
 		}
 	}
+}
+
+// getUniqueSystems populates the list of systems in a local cloud
+func getUniqueSystems(ua *UnitAsset) (*forms.SystemRecordList_v1, error) {
+	uniqueSystems := make(map[string]struct{}) // to ensure uniqueness
+	var systemList []string                    // final list of unique systems
+
+	ua.mu.Lock() // Ensure thread safety
+	defer ua.mu.Unlock()
+
+	for _, record := range ua.serviceRegistry {
+		var sAddress string
+
+		// Check for HTTPS
+		if port, exists := record.ProtoPort["https"]; exists && port != 0 {
+			sAddress = "https://" + record.IPAddresses[0] + ":" + strconv.Itoa(port) + "/" + record.SystemName
+		} else if port, exists := record.ProtoPort["http"]; exists && port != 0 { // Check for HTTP
+			sAddress = "http://" + record.IPAddresses[0] + ":" + strconv.Itoa(port) + "/" + record.SystemName
+		} else {
+			fmt.Printf("Warning: %s cannot be modeled\n", record.SystemName)
+			continue
+		}
+
+		// Ensure uniqueness
+		if _, added := uniqueSystems[sAddress]; !added {
+			uniqueSystems[sAddress] = struct{}{}
+			systemList = append(systemList, sAddress)
+		}
+	}
+	return &forms.SystemRecordList_v1{
+		List:    systemList,
+		Version: "SystemRecordList_v1",
+	}, nil
 }

@@ -44,7 +44,7 @@ func main() {
 		Description: "is an Arrowhead mandatory core sysstem that keeps track of the currently available sevices.",
 		Details:     map[string][]string{"Developer": {"Synecdoque"}},
 		ProtoPort:   map[string]int{"https": 0, "http": 20102, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/master/serviceregistrar",
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/esr",
 	}
 
 	// instantiate a template unit asset
@@ -64,7 +64,7 @@ func main() {
 		if err := json.Unmarshal(raw, &uac); err != nil {
 			log.Fatalf("Resource configuration error: %+v\n", err)
 		}
-		ua, cleanup := newResource(uac, &sys, servsTemp)
+		ua, cleanup := newResource(uac, &sys, servsTemp) // a new unit asset with its own mutex
 		defer cleanup()
 		sys.UAssets[ua.GetName()] = &ua
 	}
@@ -284,18 +284,30 @@ func (ua *UnitAsset) queryDB(w http.ResponseWriter, r *http.Request) {
 func (ua *UnitAsset) cleanDB(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "DELETE":
-		// parts := strings.Split(r.URL.Path, "/")
-		// idStr := parts[len(parts)-1]   // the ID is the last part of the URL path
-		// id, err := strconv.Atoi(idStr) // convert the ID to an integer
-		// if err != nil {
-		// 	// handle the error
-		// 	http.Error(w, "Invalid record ID", http.StatusBadRequest)
-		// 	return
-		// }
-		// deleteCompleteServiceById(ua, id)
-		// if !ua.sched.RemoveTask(id) {
-		// 	log.Printf("the scheduler had no task with id %d to remove", id)
-		// }
+		parts := strings.Split(r.URL.Path, "/")
+		idStr := parts[len(parts)-1]   // the ID is the last part of the URL path
+		id, err := strconv.Atoi(idStr) // convert the ID to an integer
+		if err != nil {
+			// handle the error
+			http.Error(w, "Invalid record ID", http.StatusBadRequest)
+			return
+		}
+		// Create a struct to send on a channel to handle the request
+		addRecord := ServiceRegistryRequest{
+			Action: "delete",
+			Id:     int64(id),
+			Error:  make(chan error),
+		}
+
+		// Send request to add a record to the unit asset
+		ua.requests <- addRecord
+		// Check the error back from the unit asset
+		err = <-addRecord.Error
+		if err != nil {
+			log.Printf("error deleting the service with id: %d, %s\n", id, err)
+			http.Error(w, "Error deleting service", http.StatusInternalServerError)
+			return
+		}
 	default:
 		fmt.Fprintf(w, "unsupported http request method")
 	}
@@ -391,13 +403,13 @@ func peersList(sys *components.System) (peers []*components.CoreSystem, err erro
 func (ua *UnitAsset) systemList(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		// systemsList, err := getUniqueSystems(ua)
-		// if err != nil {
-		// 	fmt.Printf("system list error, %s", err)
-		// }
-		// usecases.HTTPProcessGetRequest(w, r, systemsList)
-		fmt.Fprintf(w, "No systems yet")
+		systemsList, err := getUniqueSystems(ua)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("system list error: %s", err), http.StatusInternalServerError)
+			return
+		}
+		usecases.HTTPProcessGetRequest(w, r, systemsList)
 	default:
-		fmt.Fprintf(w, "unsupported http request method")
+		http.Error(w, "unsupported HTTP request method", http.StatusMethodNotAllowed)
 	}
 }

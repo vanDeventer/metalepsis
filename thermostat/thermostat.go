@@ -38,8 +38,8 @@ func main() {
 		Description: " is a controller for a consumed servo motor position based on a consumed temperature",
 		Certificate: "ABCD",
 		Details:     map[string][]string{"Developer": {"Arrowhead"}},
-		ProtoPort:   map[string]int{"https": 0, "http": 8670, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/master/thermostat",
+		ProtoPort:   map[string]int{"https": 0, "http": 20152, "coap": 0},
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/thermostat",
 	}
 
 	// instantiate a template unit asset

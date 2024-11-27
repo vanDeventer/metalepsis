@@ -40,7 +40,7 @@ func main() {
 		Description: "reads the temperature from 1-wire sensors",
 		Details:     map[string][]string{"Developer": {"Synecdoque"}},
 		ProtoPort:   map[string]int{"https": 8691, "http": 8690, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/master/ds18b20",
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/ds18b20",
 	}
 
 	// instantiate a template unit asset
