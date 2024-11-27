@@ -149,7 +149,7 @@ func (ua *UnitAsset) updateDB(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error registering service", http.StatusInternalServerError)
 			return
 		}
-		fmt.Println(record)
+		// fmt.Println(record)
 		updatedRecordBytes, err := usecases.Pack(record, mediaType)
 		if err != nil {
 			log.Printf("error confirming new service: %s", err)
@@ -243,13 +243,6 @@ func (ua *UnitAsset) queryDB(w http.ResponseWriter, r *http.Request) {
 
 		// Send request to add a record to the unit asset
 		ua.requests <- readRecord
-		// Check the error back from the unit asset
-		err = <-readRecord.Error
-		if err != nil {
-			log.Printf("error adding the new service: %v", err)
-			http.Error(w, "Error registering service", http.StatusInternalServerError)
-			return
-		}
 
 		// Use a select statement to wait for responses on either the Result or Error channel
 		select {

@@ -151,8 +151,8 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 	go ua.serviceRegistryHandler()
 
 	return ua, func() {
-		// Close channels before exiting (cleanup)
-		close(ua.requests)
+		close(ua.requests)       // Close channels before exiting (cleanup)
+		cleaningScheduler.Stop() // Gracefully stop the scheduler
 		log.Println("Closing the service registry database connection")
 	}
 }
@@ -175,8 +175,9 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 				continue
 			}
 			ua.mu.Lock() // Lock the serviceRegistry map
+
 			if rec.Id == 0 {
-				// in the case recCount had looped, check that there is no record at that position
+				// In the case recCount had looped, check that there is no record at that position
 				for {
 					currentCount := atomic.LoadInt64(&ua.recCount)
 					_, exists := ua.serviceRegistry[int(currentCount)]
@@ -188,34 +189,45 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 					atomic.AddInt64(&ua.recCount, 1)
 				}
 
-				// update the record
+				// Update the record
 				rec.Id = int(ua.recCount)
 				rec.Created = now.Format(time.RFC3339)
 				rec.Updated = now.Format(time.RFC3339)
 				rec.EndOfValidity = now.Add(time.Duration(rec.RegLife) * time.Second).Format(time.RFC3339)
-				log.Printf("the new service %s from system %s has been registered\n", rec.ServiceDefinition, rec.SystemName)
+				log.Printf("The new service %s from system %s has been registered\n", rec.ServiceDefinition, rec.SystemName)
 			} else {
+				// Validate and update existing record
+				_, exists := ua.serviceRegistry[rec.Id]
+				if !exists {
+					ua.mu.Unlock()
+					continue
+				}
 				dbRec := ua.serviceRegistry[rec.Id]
 				if dbRec.ServiceDefinition != rec.ServiceDefinition {
 					request.Error <- errors.New("mismatch between definition received record and database record")
+					ua.mu.Unlock()
 					continue
 				}
 				if dbRec.SubPath != rec.SubPath {
 					request.Error <- errors.New("mismatch between path received record and database record")
+					ua.mu.Unlock()
 					continue
 				}
 				recCreated, err := time.Parse(time.RFC3339, rec.Created)
 				if err != nil {
 					request.Error <- errors.New("time parsing problem with updated record")
+					ua.mu.Unlock()
 					continue
 				}
 				dbCreated, err := time.Parse(time.RFC3339, dbRec.Created)
 				if err != nil {
 					request.Error <- errors.New("time parsing problem with archived record")
+					ua.mu.Unlock()
 					continue
 				}
 				if !recCreated.Equal(dbCreated) {
 					request.Error <- errors.New("mismatch between created received record and database record")
+					ua.mu.Unlock()
 					continue
 				}
 				nextExpiration := now.Add(time.Duration(dbRec.RegLife) * time.Second).Format(time.RFC3339)
@@ -223,9 +235,9 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 				log.Printf("Updated the record %s with next expiration date at %s", rec.ServiceDefinition, rec.EndOfValidity)
 			}
 			ua.sched.AddTask(now.Add(time.Duration(rec.RegLife)*time.Second), func() { checkExpiration(ua, rec.Id) }, rec.Id)
-			ua.serviceRegistry[rec.Id] = *rec // add record to the registry
-			ua.mu.Unlock()
+			ua.serviceRegistry[rec.Id] = *rec // Add record to the registry
 			request.Record = rec
+			ua.mu.Unlock()
 			request.Error <- nil // Send success response
 
 		case "read":
@@ -241,7 +253,16 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 				log.Println("complete listing sent from registry")
 				continue
 			}
-			request.Error <- errors.New("service discovery failed")
+			qform, ok := request.Record.(*forms.ServiceQuest_v1)
+			if !ok {
+				fmt.Println("Problem unpacking the service quest request")
+				request.Error <- fmt.Errorf("invalid record type")
+				continue
+			}
+			fmt.Printf("\nThe service quest form is %v\n\n", qform)
+			matchingRecords := ua.FilterByServiceDefinition(qform.ServiceDefinition)
+			request.Result <- matchingRecords
+
 		case "delete":
 			// Handle delete record
 			delete(ua.serviceRegistry, int(request.Id))
@@ -251,6 +272,20 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 			request.Error <- nil // Send success response
 		}
 	}
+}
+
+// FilterByServiceDefinition returns a list of services with the given service definition
+func (ua *UnitAsset) FilterByServiceDefinition(desiredDefinition string) []forms.ServiceRecord_v1 {
+	ua.mu.Lock() // Lock to ensure thread safety while accessing serviceRegistry
+	defer ua.mu.Unlock()
+
+	var matchingRecords []forms.ServiceRecord_v1
+	for _, record := range ua.serviceRegistry {
+		if record.ServiceDefinition == desiredDefinition {
+			matchingRecords = append(matchingRecords, record)
+		}
+	}
+	return matchingRecords
 }
 
 // checkExpiration checks if a service has expired and deletes it if it has.
