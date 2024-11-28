@@ -75,7 +75,7 @@ func initTemplate() components.UnitAsset {
 		SubPath:     "setpoint",
 		Details:     map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}},
 		RegPeriod:   120,
-		CUnit:       "Eur/kWh",
+		CUnit:       "Eur/h",
 		Description: "provides the current thermal setpoint (GET) or sets it (PUT)",
 	}
 	thermalErrorService := components.Service{
@@ -146,11 +146,19 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 		},
 	}
 
-	var ref components.Service
-	for _, s := range servs {
-		if s.Definition == "setpoint" {
-			ref = s
+	var ref *components.Service
+	for i := range servs {
+		if servs[i].Definition == "setpoint" {
+			ref = &servs[i] // Get the address of the struct in the slice
+			break           // Exit early if a match is found
 		}
+	}
+
+	if ref == nil {
+		log.Println("No setpoint service found!")
+		// Handle missing setpoint service appropriately
+	} else {
+		ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, ref.Details)
 	}
 
 	ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, ref.Details)
