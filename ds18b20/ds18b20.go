@@ -19,11 +19,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/sdoque/mbaigo/components"
+	"github.com/sdoque/mbaigo/forms"
 	"github.com/sdoque/mbaigo/usecases"
 )
 
@@ -35,7 +37,7 @@ func main() {
 	// instantiate the System
 	sys := components.NewSystem("ds18b20", ctx)
 
-	// instatiate the husk
+	// instantiate the husk
 	sys.Husk = &components.Husk{
 		Description: "reads the temperature from 1-wire sensors",
 		Details:     map[string][]string{"Developer": {"Synecdoque"}},
@@ -80,13 +82,13 @@ func main() {
 	time.Sleep(2 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
 }
 
-// Serving handles the resources services. NOTE: it exepcts those names from the request URL path
+// Serving handles the resources services. NOTE: it expects those names from the request URL path
 func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch servicePath {
 	case "temperature":
 		ua.readTemp(w, r)
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 
@@ -94,8 +96,25 @@ func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath
 func (ua *UnitAsset) readTemp(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		temperatureForm := serveTemperature(ua) // fill out the form
-		usecases.HTTPProcessGetRequest(w, r, &temperatureForm)
+		getMeasuremet := STray{
+			Action: "read",
+			ValueP: make(chan forms.SignalA_v1a),
+			Error:  make(chan error),
+		}
+		ua.trayChan <- getMeasuremet
+		select {
+		case err := <-getMeasuremet.Error:
+			fmt.Printf("Logic error in getting measurement, %s\n", err)
+			w.WriteHeader(http.StatusInternalServerError) // Use 500 for an internal error
+			return
+		case temperatureForm := <-getMeasuremet.ValueP:
+			usecases.HTTPProcessGetRequest(w, r, &temperatureForm)
+			return
+		case <-time.After(5 * time.Second): // Optional timeout
+			http.Error(w, "Request timed out", http.StatusGatewayTimeout)
+			log.Println("Failure to process temperature reading request")
+			return
+		}
 	default:
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}

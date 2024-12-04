@@ -79,7 +79,7 @@ func (ua *UnitAsset) GetDetails() map[string][]string {
 // ensure UnitAsset implements components.UnitAsset (this check is done at during the compilation)
 var _ components.UnitAsset = (*UnitAsset)(nil)
 
-//-------------------------------------Instatiate a unit asset template
+//-------------------------------------Instantiate a unit asset template
 
 // initTemplate initializes a UnitAsset with default values.
 func initTemplate() components.UnitAsset {

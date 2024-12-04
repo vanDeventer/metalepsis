@@ -8,7 +8,19 @@ The ephemeral or non persistent aspect of the registry reflects that only the cu
 There is no need to permanently keep track of what is currently available.
 If such tracking is necessary, it is best suited with the Modeler system with its graph database as asset.
 
-## Cross compile
+## Compilation
+After cloning the *Systems repository*, you will need to go to the *esr* directory in the command line interface or terminal.
+There, you will need to initialize the *go.mod* file for dependency tracking and version management (this is done only once).
+Type ```go mod init esr```.
+As it generates the file, it will tell you to tidy it up with ```go mod tidy```.
+If there are dependencies, (which you can list with ```go list -m all```), it will generate a *go.sum* file with the checksum of the downloaded dependencies for integrity verification.
+You can then compile your code with ```go build esr.go thing.go scheduler.go```.
+The first time, the program is ran, it will generate the *systemconfig.json*, which you can update if necessary.
+Then restarting the program, the system will be up and running.
+It will provide you with the URL of its web server, which you can access with a standard web browser.
+
+
+## Cross compilation
 - Intel Mac: ```GOOS=darwin GOARCH=amd64 go build -o esr_imac esr.go thing.go scheduler.go``` 
 - ARM Mac: ```GOOS=darwin GOARCH=arm64 go build -o esr_amac esr.go thing.go scheduler.go```
 - Windows 64: ```GOOS=windows GOARCH=amd64 go build -o esr_win64.exe esr.go thing.go scheduler.go```
