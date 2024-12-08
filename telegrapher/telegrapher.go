@@ -24,25 +24,24 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sdoque/mbaigo/components"
-	"github.com/sdoque/mbaigo/usecases"
+	"github.com/vanDeventer/mbaigo/components"
+	"github.com/vanDeventer/mbaigo/usecases"
 )
 
-// This is the main function for the Modbus master (Modboss) system
 func main() {
 	// prepare for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background()) // create a context that can be cancelled
 	defer cancel()
 
 	// instantiate the System
-	sys := components.NewSystem("modboss", ctx)
+	sys := components.NewSystem("telegrapher", ctx)
 
 	// instatiate the husk
 	sys.Husk = &components.Husk{
-		Description: "interacts with an Modbus slave or server",
-		Details:     map[string][]string{"Developer": {"Arrowhead"}},
-		ProtoPort:   map[string]int{"https": 0, "http": 20171, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/main/modboss",
+		Description: " subcribes and publishes to an MQTT broker",
+		Details:     map[string][]string{"Developer": {"Synecdoque"}},
+		ProtoPort:   map[string]int{"https": 0, "http": 20172, "coap": 0},
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/telegrapher",
 	}
 
 	// instantiate a template unit asset
@@ -55,7 +54,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Configuration error: %v\n", err)
 	}
+
 	sys.UAssets = make(map[string]*components.UnitAsset) // clear the unit asset map (from the template)
+	//	Resources := make(map[string]*UnitAsset)
 	for _, raw := range rawResources {
 		var uac UnitAsset
 		if err := json.Unmarshal(raw, &uac); err != nil {
@@ -74,7 +75,7 @@ func main() {
 	// Register the (system) and its services
 	usecases.RegisterServices(&sys)
 
-	// start the requests handlers and servers
+	// start the http handler and server
 	go usecases.SetoutServers(&sys)
 
 	// wait for shutdown signal, and gracefully close properly goroutines with context
@@ -86,20 +87,31 @@ func main() {
 
 // Serving handles the resources services. NOTE: it exepcts those names from the request URL path
 func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
-	switch servicePath {
-
-	case "access":
-		ua.access(w, r)
-	default:
+	svrs := ua.GetServices()
+	if svrs[servicePath] != nil {
+		ua.access(w, r, servicePath)
+	} else {
 		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
 	}
 }
 
-func (ua *UnitAsset) access(w http.ResponseWriter, r *http.Request) {
+func (ua *UnitAsset) access(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch r.Method {
 	case "GET":
-		vauleForm := ua.read()
-		usecases.HTTPProcessGetRequest(w, r, vauleForm)
+		msg := messageList[ua.metatopic+"/"+servicePath]
+		if msg != nil {
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(msg)
+		} else {
+			http.Error(w, "The subscribed topic is not being published", http.StatusBadRequest)
+		}
+	case "PUT":
+		// sig, err := usecases.HTTPProcessSetRequest(w, r)
+		// if err != nil {
+		// 	log.Println("Error with the setting request of the position ", err)
+		// }
+		// ua.setPosition(sig)
 	default:
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}
