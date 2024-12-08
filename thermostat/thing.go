@@ -1,10 +1,13 @@
 /*******************************************************************************
- * Copyright (c) 2024 Jan van Deventer
+ * Copyright (c) 2024 Synecdoque
  *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v2.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-2.0/
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, subject to the following conditions:
+ *
+ * The software is licensed under the MIT License. See the LICENSE file in this repository for details.
  *
  * Contributors:
  *   Jan A. van Deventer, Luleå - initial implementation
@@ -66,7 +69,7 @@ func (ua *UnitAsset) GetDetails() map[string][]string {
 // ensure UnitAsset implements components.UnitAsset (this check is done at during the compilation)
 var _ components.UnitAsset = (*UnitAsset)(nil)
 
-//-------------------------------------Instatiate a unit asset template
+//-------------------------------------Instantiate a unit asset template
 
 // initTemplate initializes a UnitAsset with default values.
 func initTemplate() components.UnitAsset {
@@ -83,7 +86,7 @@ func initTemplate() components.UnitAsset {
 		SubPath:     "thermalerror",
 		Details:     map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}},
 		RegPeriod:   120,
-		Description: "provides the current difference between the setpoint and the temperature (GET)",
+		Description: "provides the current difference between the set point and the temperature (GET)",
 	}
 	jitterService := components.Service{
 		Definition:  "jitter",
@@ -111,11 +114,11 @@ func initTemplate() components.UnitAsset {
 	return uat
 }
 
-//-------------------------------------Instatiate the unit assets based on configuration
+//-------------------------------------Instantiate the unit assets based on configuration
 
 // newResource creates the Resource resource with its pointers and channels based on the configuration using the tConig structs
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {
-	// deterimine the protocols that the system supports
+	// determine the protocols that the system supports
 	sProtocols := components.SProtocols(sys.Husk.ProtoPort)
 	// instantiate the consumed services
 	t := &components.Cervice{
@@ -129,7 +132,7 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 		Protos: sProtocols,
 		Url:    make([]string, 0),
 	}
-	// intantiate the unit asset
+	// instantiate the unit asset
 	ua := &UnitAsset{
 		Name:        uac.Name,
 		Owner:       sys,
@@ -146,22 +149,7 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 		},
 	}
 
-	var ref *components.Service
-	for i := range servs {
-		if servs[i].Definition == "setpoint" {
-			ref = &servs[i] // Get the address of the struct in the slice
-			break           // Exit early if a match is found
-		}
-	}
-
-	if ref == nil {
-		log.Println("No setpoint service found!")
-		// Handle missing setpoint service appropriately
-	} else {
-		ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, ref.Details)
-	}
-
-	ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, ref.Details)
+	ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}})
 	ua.CervicesMap["rotation"].Details = components.MergeDetails(ua.Details, map[string][]string{"Unit": {"Percent"}, "Forms": {"SignalA_v1a"}})
 
 	// start the unit asset(s)
@@ -178,7 +166,7 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 func (ua *UnitAsset) getSetPoint() (f forms.SignalA_v1a) {
 	f.NewForm()
 	f.Value = ua.Setpt
-	f.Unit = "Celcius"
+	f.Unit = "Celsius"
 	f.Timestamp = time.Now()
 	return f
 }

@@ -119,7 +119,7 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 	}
 }
 
-//-------------------------------------Unit asset's resource functions
+//-------------------------------------Unit asset's functionalities
 
 // readTemperature obtains the temperature from respective ds18b20 resource at regular intervals
 func (ua *UnitAsset) readTemperature(ctx context.Context) {
@@ -174,14 +174,7 @@ func (ua *UnitAsset) readTemperature(ctx context.Context) {
 			f.Value = ua.temperature
 			f.Unit = "Celsius"
 			f.Timestamp = ua.tStamp
-
-			// Send the temperature data back
-			select {
-			case order.ValueP <- f:
-				log.Println("Temperature data sent to requester.")
-			default:
-				log.Println("No receiver available for temperature data.")
-			}
+			order.ValueP <- f
 		}
 	}
 }
