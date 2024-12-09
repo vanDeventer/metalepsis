@@ -316,7 +316,7 @@ func (ua *UnitAsset) cleanDB(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// roleStatus rerturn the current activity of a service registrar (i.e., leading or on stand by)
+// roleStatus returns the current activity of a service registrar (i.e., leading or on stand by)
 func (ua *UnitAsset) roleStatus(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":

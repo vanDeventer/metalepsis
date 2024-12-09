@@ -126,49 +126,69 @@ func (ua *UnitAsset) readTemperature(ctx context.Context) {
 	defer close(ua.trayChan) // Ensure the channel is closed when the goroutine exits
 
 	randomdDelay()
+
 	// Create a ticker that triggers every 2 seconds
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop() // Clean up the ticker when done
 
+	tempChan := make(chan float64) // Channel for latest temperature readings
+	tStampChan := make(chan time.Time)
+
+	// Start a separate goroutine for temperature reading
+	go func() {
+		for {
+			select {
+			case <-ctx.Done(): // Stop when the context is canceled
+				return
+
+			case <-ticker.C: // Read temperature at regular intervals
+				deviceFile := "/sys/bus/w1/devices/" + ua.Name + "/w1_slave"
+				rawData, err := os.ReadFile(deviceFile)
+				if err != nil {
+					log.Printf("Error reading temperature file: %s, error: %v\n", deviceFile, err)
+					continue // Retry on the next cycle
+				}
+
+				if len(rawData) == 0 {
+					log.Printf("Empty data read from temperature file: %s\n", deviceFile)
+					continue
+				}
+
+				rawValue := strings.Split(string(rawData), "\n")[1]
+				if !strings.Contains(rawValue, "t=") {
+					log.Printf("Invalid temperature data: %s\n", rawData)
+					continue
+				}
+
+				tempStr := strings.Split(rawValue, "t=")[1]
+				temp, err := strconv.ParseFloat(tempStr, 64)
+				if err != nil {
+					log.Printf("Error parsing temperature: %v\n", err)
+					continue
+				}
+
+				// Send the temperature and timestamp back to the main loop
+				select {
+				case tempChan <- temp / 1000.0:
+					tStampChan <- time.Now()
+				case <-ctx.Done(): // Stop the goroutine if context is canceled
+					return
+				}
+			}
+		}
+	}()
+
 	for {
 		select {
-		case <-ctx.Done(): // shutdown
+		case <-ctx.Done(): // Shutdown
 			log.Println("Context canceled, stopping temperature readings.")
 			return
 
-		case <-ticker.C: // reading at regular interval
-			// Path to the DS18B20 sensor device file
-			deviceFile := "/sys/bus/w1/devices/" + ua.Name + "/w1_slave"
+		case temp := <-tempChan: // Update temperature and timestamp
+			ua.temperature = temp
+			ua.tStamp = <-tStampChan
 
-			rawData, err := os.ReadFile(deviceFile)
-			if err != nil {
-				log.Printf("Error reading temperature file: %s, error: %v\n", deviceFile, err)
-				continue // Retry on the next timer cycle
-			}
-
-			if len(rawData) == 0 {
-				log.Printf("Empty data read from temperature file: %s\n", deviceFile)
-				continue
-			}
-
-			rawValue := strings.Split(string(rawData), "\n")[1]
-			if !strings.Contains(rawValue, "t=") {
-				log.Printf("Invalid temperature data: %s\n", rawData)
-				continue
-			}
-
-			tempStr := strings.Split(rawValue, "t=")[1]
-			temp, err := strconv.ParseFloat(tempStr, 64)
-			if err != nil {
-				log.Printf("Error parsing temperature: %v\n", err)
-				continue
-			}
-
-			ua.temperature = temp / 1000.0
-			ua.tStamp = time.Now()
-
-		case order := <-ua.trayChan: // addressing a GET request
-			// Respond to a request from the channel
+		case order := <-ua.trayChan: // Address a GET request
 			var f forms.SignalA_v1a
 			f.NewForm()
 			f.Value = ua.temperature
