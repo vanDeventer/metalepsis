@@ -107,6 +107,7 @@ This command downloads the `graphdb` Docker image to your Raspberry Pi, allowing
 #### Command:
 ```bash
 docker run -d -p 7200:7200 --name graphdb -t ontotext/graphdb:10.7.4
+docker run -d --network host --name graphdb ontotext/graphdb:10.7.4
 ```
 
 - **`docker run`**: This starts a new container from a Docker image.
@@ -120,4 +121,4 @@ docker run -d -p 7200:7200 --name graphdb -t ontotext/graphdb:10.7.4
 - **`ontotext/graphdb`**: This specifies the image to use to create the container. Docker will use the image you pulled earlier.
 
 
-To shut the running instance, type ```docker rm graphdb``` .
+To shut the running instance, type ```docker stop graphdb``` and then ```docker rm graphdb``` .

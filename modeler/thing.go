@@ -71,7 +71,7 @@ func (ua *UnitAsset) GetDetails() map[string][]string {
 // ensure UnitAsset implements components.UnitAsset (this check is done at during the compilation)
 var _ components.UnitAsset = (*UnitAsset)(nil)
 
-//-------------------------------------Instatiate a unit asset template
+//-------------------------------------Instantiate a unit asset template
 
 // initTemplate initializes a UnitAsset with default values.
 func initTemplate() components.UnitAsset {
@@ -191,52 +191,73 @@ func (ua *UnitAsset) assembleOntologies(w http.ResponseWriter) {
 		return
 	}
 
-	// prepare the local cloud's semantic model by asking each system their semantic model
-	prefixes := make(map[string]bool)
-	var individuals []string
+	// Prepare the local cloud's semantic model by asking each system their semantic model
+	prefixes := make(map[string]bool)        // To store unique prefixes
+	processedBlocks := make(map[string]bool) // To track processed RDF blocks
+	var uniqueIndividuals []string           // To store unique RDF individuals
 
 	for _, s := range systemsList.List {
-		sysUrl := s + "/onto"
+		sysUrl := s + "/model"
 		fmt.Println(sysUrl)
 		resp, err := http.Get(sysUrl)
 		if err != nil {
-			log.Printf("unable to get ontology from %s: %s\n", s, err)
+			log.Printf("Unable to get ontology from %s: %s\n", s, err)
 			continue
 		}
-		bodyBytes, err = io.ReadAll(resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			log.Printf("Error reading ontology response from %s: %s\n", s, err)
 			continue
 		}
-		lines := strings.Split(string(bodyBytes), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "@prefix") {
-				prefixes[line] = true
-			} else {
-				individuals = append(individuals, line)
+
+		// Split into individual RDF blocks
+		blocks := strings.Split(string(bodyBytes), "\n\n") // Assuming blocks are separated by newlines
+
+		for _, block := range blocks {
+			normalizedBlock := strings.TrimSpace(block)
+			if processedBlocks[normalizedBlock] {
+				// Skip duplicate block
+				continue
 			}
+
+			// Extract prefixes only from the first pass and add to the prefixes map
+			if strings.HasPrefix(normalizedBlock, "@prefix") {
+				lines := strings.Split(normalizedBlock, "\n")
+				for _, line := range lines {
+					if strings.HasPrefix(line, "@prefix") {
+						prefixes[line] = true // Add unique prefixes
+					}
+				}
+				continue // Skip adding prefixes as RDF blocks
+			}
+
+			// Mark this block as processed and add to individuals
+			processedBlocks[normalizedBlock] = true
+			uniqueIndividuals = append(uniqueIndividuals, normalizedBlock)
 		}
 	}
 
 	var graph string
+
+	// Write unique prefixes once
 	for prefix := range prefixes {
-		w.Write([]byte(prefix + "\n"))
 		graph += prefix + "\n"
 	}
+
+	// Add the ontology definition
 	rdf := "\ntemp:ontology a owl:Ontology .\n"
-	w.Write([]byte(rdf + "\n"))
 	graph += rdf + "\n"
 
-	for _, individual := range individuals {
-		w.Write([]byte(individual + "\n"))
-		graph += "\n" + individual
+	// Write unique RDF blocks
+	for _, block := range uniqueIndividuals {
+		graph += block + "\n\n"
 	}
 
-	log.Println("The model is:\n", graph)
+	// Log the final graph
+	log.Println("The deduplicated model is:\n", graph)
 
-	// send semantic model to GraphDB
-	// Create a new POST request with Turtle data
+	// Send the semantic model to GraphDB
 	req, err = http.NewRequest("POST", ua.RepositoryURL, bytes.NewBuffer([]byte(graph)))
 	if err != nil {
 		fmt.Println("Error creating the request:", err)

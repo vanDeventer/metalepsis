@@ -40,7 +40,7 @@ func main() {
 	sys.Husk = &components.Husk{
 		Description: " is a controller for a consumed servo motor position based on a consumed temperature",
 		Certificate: "ABCD",
-		Details:     map[string][]string{"Developer": {"Arrowhead"}},
+		Details:     map[string][]string{"Developer": {"Synecdoque"}},
 		ProtoPort:   map[string]int{"https": 0, "http": 20152, "coap": 0},
 		InfoLink:    "https://github.com/sdoque/systems/tree/main/thermostat",
 	}
@@ -92,7 +92,7 @@ func (t *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath 
 	case "jitter":
 		t.variations(w, r)
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 

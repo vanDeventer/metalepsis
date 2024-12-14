@@ -41,7 +41,7 @@ func main() {
 	sys.Husk = &components.Husk{
 		Description: "assembles the ontologies of all systems in a local cloud",
 		Details:     map[string][]string{"Developer": {"Synecdoque"}},
-		ProtoPort:   map[string]int{"https": 20105, "http": 20105, "coap": 0},
+		ProtoPort:   map[string]int{"https": 5656, "http": 20105, "coap": 0},
 		InfoLink:    "https://github.com/sdoque/systems/tree/main/modeler",
 	}
 
