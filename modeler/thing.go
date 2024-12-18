@@ -19,8 +19,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -246,16 +244,13 @@ func (ua *UnitAsset) assembleOntologies(w http.ResponseWriter) {
 	}
 
 	// Add the ontology definition
-	rdf := "\ntemp:ontology a owl:Ontology .\n"
+	rdf := "\n:ontology a owl:Ontology .\n"
 	graph += rdf + "\n"
 
 	// Write unique RDF blocks
 	for _, block := range uniqueIndividuals {
 		graph += block + "\n\n"
 	}
-
-	// Log the final graph
-	log.Println("The deduplicated model is:\n", graph)
 
 	// Send the semantic model to GraphDB
 	req, err = http.NewRequest("POST", ua.RepositoryURL, bytes.NewBuffer([]byte(graph)))
@@ -280,33 +275,8 @@ func (ua *UnitAsset) assembleOntologies(w http.ResponseWriter) {
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Println("Response Status:", resp.Status)
 	fmt.Println("Response Body:", string(body))
-}
 
-// ExtractDiscoveryForm is used by the Orchestrator and the authorized consumer system
-func ExtractSystemsList(bodyBytes []byte) (sList forms.SystemRecordList_v1, err error) {
-	var jsonData map[string]interface{}
-	err = json.Unmarshal(bodyBytes, &jsonData)
-	if err != nil {
-		log.Printf("Error unmarshaling JSON data: %v", err)
-		return
-	}
-	formVersion, ok := jsonData["Version"].(string)
-	if !ok {
-		log.Printf("Error: 'version' key not found in JSON data")
-		return
-	}
-	switch formVersion {
-	case "SystemRecordList_v1":
-		var f forms.SystemRecordList_v1
-		f.NewForm()
-		err = json.Unmarshal(bodyBytes, &f)
-		if err != nil {
-			log.Println("Unable to extract systems list")
-			return
-		}
-		sList = f
-	default:
-		err = errors.New("unsupported systems list")
-	}
-	return
+	// Send the knowledge graph to the browser
+	w.Header().Set("Content-Type", "text/turtle")
+	w.Write([]byte(graph))
 }
