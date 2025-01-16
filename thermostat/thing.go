@@ -122,15 +122,15 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 	sProtocols := components.SProtocols(sys.Husk.ProtoPort)
 	// instantiate the consumed services
 	t := &components.Cervice{
-		Name:   "temperature",
-		Protos: sProtocols,
-		Url:    make([]string, 0),
+		Definition: "temperature",
+		Protos:     sProtocols,
+		Nodes:      make(map[string][]string, 0),
 	}
 
 	r := &components.Cervice{
-		Name:   "rotation",
-		Protos: sProtocols,
-		Url:    make([]string, 0),
+		Definition: "rotation",
+		Protos:     sProtocols,
+		Nodes:      make(map[string][]string, 0),
 	}
 	// instantiate the unit asset
 	ua := &UnitAsset{
@@ -144,8 +144,8 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 		Lambda:      uac.Lambda,
 		Ki:          uac.Ki,
 		CervicesMap: components.Cervices{
-			t.Name: t,
-			r.Name: r,
+			t.Definition: t,
+			r.Definition: r,
 		},
 	}
 
