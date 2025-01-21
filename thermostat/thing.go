@@ -177,7 +177,7 @@ func (ua *UnitAsset) setSetPoint(f forms.SignalA_v1a) {
 	log.Printf("new set point: %.1f", f.Value)
 }
 
-// getErrror fills out a signal form with the currrent thermal setpoint and temperature
+// getErrror fills out a signal form with the current thermal setpoint and temperature
 func (ua *UnitAsset) getError() (f forms.SignalA_v1a) {
 	f.NewForm()
 	f.Value = ua.deviation
@@ -260,7 +260,7 @@ func (ua *UnitAsset) processFeedbackLoop() {
 	ua.jitter = time.Since(jitterStart)
 }
 
-// calculateOutput is the actual P contoroller (no real close loop yet)
+// calculateOutput is the actual P controller (no real close loop yet)
 func (ua *UnitAsset) calculateOutput(thermDiff float64) float64 {
 	vPosition := ua.Kp*thermDiff + 50 // if the error is 0, the position is at 50%
 

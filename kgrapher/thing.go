@@ -86,7 +86,7 @@ func initTemplate() components.UnitAsset {
 	uat := &UnitAsset{
 		Name:          "assembler",
 		Owner:         &components.System{},
-		Details:       map[string][]string{"Location": {"Local cloud"}},
+		Details:       map[string][]string{"Location": {"LocalCloud"}},
 		ServicesMap:   map[string]*components.Service{cloudgraph.SubPath: &cloudgraph},
 		RepositoryURL: "http://localhost:7200/repositories/Arrowhead/statements",
 	}
