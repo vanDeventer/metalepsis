@@ -236,7 +236,7 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 				}
 				nextExpiration := now.Add(time.Duration(dbRec.RegLife) * time.Second).Format(time.RFC3339)
 				rec.EndOfValidity = nextExpiration
-				log.Printf("Updated the record %s with next expiration date at %s", rec.ServiceDefinition, rec.EndOfValidity)
+				// log.Printf("Updated the record %s with next expiration date at %s", rec.ServiceDefinition, rec.EndOfValidity)
 			}
 			ua.sched.AddTask(now.Add(time.Duration(rec.RegLife)*time.Second), func() { checkExpiration(ua, rec.Id) }, rec.Id)
 			ua.serviceRegistry[rec.Id] = *rec // Add record to the registry
@@ -254,7 +254,7 @@ func (ua *UnitAsset) serviceRegistryHandler() {
 				}
 				ua.mu.Unlock() // Unlock access to the service registry map
 				request.Result <- result
-				log.Println("complete listing sent from registry")
+				// log.Println("complete listing sent from registry")
 				continue
 			}
 			qform, ok := request.Record.(*forms.ServiceQuest_v1)

@@ -4,10 +4,10 @@
 *.dll
 *.so
 *.dylib
-*_rpi64	# ignore executables for the Raspberry Pi with 64bit OS
-*_imac	# ignore executables for Intel Mac
-*_amac	# ignore executables for ARM Mac
-*_ilin	# ignore executables for Intel Linux
+*_rpi64
+*_imac
+*_amac
+*_ilin
 *.sh
 Makefile
 
@@ -22,8 +22,8 @@ vendor/
 .DS_Store
 .vscode/*
 
-# AiGo
-Systemconfig.json
+# mbaigo
+*.json
 go.mod
 go.sum
 serviceRegistry.db

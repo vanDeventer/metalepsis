@@ -280,7 +280,7 @@ func (ua *UnitAsset) queryDB(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Unsupported HTTP request method", http.StatusMethodNotAllowed)
 	}
-	fmt.Println("Done quering the database")
+	// fmt.Println("Done querying the database")
 }
 
 // cleanDB deletes service records upon request (e.g., when a system shuts down)

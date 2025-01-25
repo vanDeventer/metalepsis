@@ -102,7 +102,7 @@ func initTemplate() components.UnitAsset {
 		SubPath:     "access",
 		Details:     map[string][]string{"Protocol": {"opc.tcp"}},
 		RegPeriod:   30,
-		Description: "accesses the OPC UA node to read (GET) the information or if posssible to write (PUT)[but not yet], ",
+		Description: "accesses the OPC UA node to read (GET) the information or if possible to write (PUT)[but not yet], ",
 	}
 
 	// var uat components.UnitAsset // this is an interface, which we then initialize

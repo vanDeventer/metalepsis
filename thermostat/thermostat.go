@@ -36,7 +36,7 @@ func main() {
 	// instantiate the System
 	sys := components.NewSystem("thermostat", ctx)
 
-	// Instantiate the Capusle
+	// Instantiate the husk
 	sys.Husk = &components.Husk{
 		Description: " is a controller for a consumed servo motor position based on a consumed temperature",
 		Certificate: "ABCD",
