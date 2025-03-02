@@ -1,10 +1,13 @@
 /*******************************************************************************
- * Copyright (c) 2024 Jan van Deventer
+ * Copyright (c) 2024 Synecdoque
  *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v2.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-2.0/
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, subject to the following conditions:
+ *
+ * The software is licensed under the MIT License. See the LICENSE file in this repository for details.
  *
  * Contributors:
  *   Jan A. van Deventer, Luleå - initial implementation
@@ -42,9 +45,9 @@ func main() {
 	// Instatiate the Capusle
 	sys.Husk = &components.Husk{
 		Description: "is an Arrowhead mandatory core sysstem that keeps track of the currently available sevices.",
-		Details:     map[string][]string{"Developer": {"Arrowhead"}},
-		ProtoPort:   map[string]int{"https": 0, "http": 8443, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/main/sregistrar",
+		Details:     map[string][]string{"Developer": {"Synecdoque"}},
+		ProtoPort:   map[string]int{"https": 0, "http": 20102, "coap": 0},
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/esr",
 	}
 
 	// instantiate a template unit asset
@@ -58,13 +61,13 @@ func main() {
 		log.Fatalf("Configuration error: %v\n", err)
 	}
 	sys.UAssets = make(map[string]*components.UnitAsset) // clear the unit asset map (from the template)
-	//	Resources := make(map[string]*UnitAsset)
+
 	for _, raw := range rawResources {
 		var uac UnitAsset
 		if err := json.Unmarshal(raw, &uac); err != nil {
 			log.Fatalf("Resource configuration error: %+v\n", err)
 		}
-		ua, cleanup := newResource(uac, &sys, servsTemp)
+		ua, cleanup := newResource(uac, &sys, servsTemp) // a new unit asset with its own mutex
 		defer cleanup()
 		sys.UAssets[ua.GetName()] = &ua
 	}
@@ -120,55 +123,49 @@ func (ua *UnitAsset) updateDB(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("Error parsing media type:", err)
 			return
 		}
+
 		defer r.Body.Close()
-		bodyBytes, err := io.ReadAll(r.Body) // Use io.ReadAll instead of ioutil.ReadAll
+		bodyBytes, err := io.ReadAll(r.Body)
 		if err != nil {
 			log.Printf("error reading registration request body: %v", err)
 			return
 		}
-
-		regRec, err := usecases.Unpack(bodyBytes, mediaType)
+		record, err := usecases.Unpack(bodyBytes, mediaType)
 		if err != nil {
-			log.Printf("error extracting the registration record relpy %v\n", err)
-		}
-
-		// Perform a type assertion to convert the returned Form to ServiceRecord_v1
-		newRecord, ok := regRec.(*forms.ServiceRecord_v1)
-		if !ok {
-			fmt.Println("error extracting registration request")
+			log.Printf("error extracting the registration request %v\n", err)
 			return
 		}
 
-		// Process request ////////////////////////////////////////////////////
-
-		if newRecord.Id == 0 {
-			err = registerService(ua, newRecord) // insert the new record into the database
-			log.Printf("the new service %s from system %s has been registered\n", newRecord.ServiceDefinition, newRecord.SystemName)
-			if err != nil {
-				log.Println(err)
-			}
-		} else {
-			err = extendServiceValidity(ua, newRecord)
-			if err != nil {
-				err = registerService(ua, newRecord) // insert the new record into the database since the "existing" record was not found
-				log.Printf("the service %s from system %s has been re-registered\n", newRecord.ServiceDefinition, newRecord.SystemName)
-				if err != nil {
-					log.Println(err)
-				}
-			}
+		// Create a struct to send on a channel to handle the request
+		addRecord := ServiceRegistryRequest{
+			Action: "add",
+			Record: record,
+			Error:  make(chan error),
 		}
 
-		jform, err := usecases.Pack(newRecord, mediaType)
+		// Send request to add a record to the unit asset
+		ua.requests <- addRecord
+		// Check the error back from the unit asset
+		err = <-addRecord.Error
 		if err != nil {
-			log.Println("registration marshall error")
+			log.Printf("error adding the new service: %v", err)
+			http.Error(w, "Error registering service", http.StatusInternalServerError)
+			return
+		}
+		// fmt.Println(record)
+		updatedRecordBytes, err := usecases.Pack(record, mediaType)
+		if err != nil {
+			log.Printf("error confirming new service: %s", err)
+			http.Error(w, "Error registering service", http.StatusInternalServerError)
 		}
 		w.Header().Set("Content-Type", mediaType)
 		w.WriteHeader(http.StatusOK)
-		_, err = w.Write(jform)
+		_, err = w.Write([]byte(updatedRecordBytes))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 	default:
 		fmt.Fprintf(w, "unsupported http request method")
 	}
@@ -177,84 +174,113 @@ func (ua *UnitAsset) updateDB(w http.ResponseWriter, r *http.Request) {
 // queryDB looks for service records in the service registry
 func (ua *UnitAsset) queryDB(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
-	case "GET":
-		// Handle GET request - no payload, only URL query parameters
-		serviceList := listCurrentServices(ua)
-		text := "<!DOCTYPE html><html><body>"
-		w.Write([]byte(text))
-		text = "<p>The local cloud's currently available services are:</p><ul>"
-		w.Write([]byte(text))
-		for _, availableService := range serviceList {
-			w.Write([]byte(fmt.Sprintf("<li>%s</li>", availableService)))
+	case "GET": // from a web browser
+		// Create a struct to send on a channel to handle the request
+		recordsRequest := ServiceRegistryRequest{
+			Action: "read",
+			Result: make(chan []forms.ServiceRecord_v1),
+			Error:  make(chan error),
 		}
-		text = "</ul></body></html>"
-		w.Write([]byte(text))
 
-	case "POST":
-		// Handle POST request - with a JSON payload from the Orchestrator
-		headerContentType := r.Header.Get("Content-Type")
-		if !strings.Contains(headerContentType, "application/json") {
-			http.Error(w, "Unsupported Media Type", http.StatusUnsupportedMediaType)
+		// Send request to the `ua.requests` channel
+		ua.requests <- recordsRequest
+
+		// Use a select statement to wait for responses on either the Result or Error channel
+		select {
+		case err := <-recordsRequest.Error:
+			if err != nil {
+				log.Printf("Error retrieving service records: %v", err)
+				http.Error(w, "Error retrieving service records", http.StatusInternalServerError)
+			}
+		case servvicesList := <-recordsRequest.Result:
+			// Build the HTML response
+			text := "<!DOCTYPE html><html><body>"
+			w.Write([]byte(text))
+			text = "<p>The local cloud's currently available services are:</p><ul>"
+			w.Write([]byte(text))
+			for _, serRec := range servvicesList {
+				metaservice := ""
+				for key, values := range serRec.Details {
+					metaservice += key + ": " + fmt.Sprintf("%v", values) + " "
+				}
+				hyperlink := "http://" + serRec.IPAddresses[0] + ":" + strconv.Itoa(int(serRec.ProtoPort["http"])) + "/" + serRec.SystemName + "/" + serRec.SubPath
+				parts := strings.Split(serRec.SubPath, "/")
+				uaName := parts[0]
+				sLine := "<p>Service ID: " + strconv.Itoa(int(serRec.Id)) + " with definition <b><a href=\"" + hyperlink + "\">" + serRec.ServiceDefinition + "</b></a> from the <b>" + serRec.SystemName + "/" + uaName + "</b> with details " + metaservice + " will expire at: " + serRec.EndOfValidity + "</p>"
+				w.Write([]byte(fmt.Sprintf("<li>%s</li>", sLine)))
+			}
+			text = "</ul></body></html>"
+			w.Write([]byte(text))
+		case <-time.After(5 * time.Second): // Optional timeout
+			http.Error(w, "Request timed out", http.StatusGatewayTimeout)
+			log.Println("Failure to process service listing request")
+		}
+
+	case "POST": // from the orchesrator
+		contentType := r.Header.Get("Content-Type")
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			fmt.Println("Error parsing media type:", err)
 			return
 		}
 
 		defer r.Body.Close()
 		bodyBytes, err := io.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("Error reading service query request body: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			log.Printf("error reading service discovery request body: %v", err)
 			return
 		}
-
-		questForm, err := usecases.Unpack(bodyBytes, headerContentType)
+		record, err := usecases.Unpack(bodyBytes, mediaType)
 		if err != nil {
-			log.Printf("error extracting the discovery request %v\n", err)
-		}
-		// Perform a type assertion to convert the returned Form to SignalA_v1a
-		qf, ok := questForm.(*forms.ServiceQuest_v1)
-		if !ok {
-			fmt.Println("Problem unpacking the service discovery request form")
-			return
-		}
-		fmt.Printf("The service discovery request form is %v\n", qf)
-
-		// Process request and get a copy of the availavle services in a list of ServiceRecords
-		discoveryList, err := findServices(ua, *qf)
-		if err != nil {
-			log.Printf("Error querying the Service Registry: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			log.Printf("error extracting the service discovery request %v\n", err)
 			return
 		}
 
-		// fill out the form that has the list of services that fit the request
-		dsListForm, err := usecases.FillDiscoveredServices(discoveryList, "ServiceRecordList_v1")
-		if err != nil {
-			log.Println("service record processing error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
+		// Create a struct to send on a channel to handle the request
+		readRecord := ServiceRegistryRequest{
+			Action: "read",
+			Record: record,
+			Result: make(chan []forms.ServiceRecord_v1),
+			Error:  make(chan error),
 		}
 
-		// package up the list into a byte array
-		payload, err := usecases.Pack(dsListForm, headerContentType)
-		if err != nil {
-			log.Println("Discovery marshalling error")
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		// Send request to add a record to the unit asset
+		ua.requests <- readRecord
+
+		// Use a select statement to wait for responses on either the Result or Error channel
+		select {
+		case err := <-readRecord.Error:
+			if err != nil {
+				log.Printf("Error retrieving service records: %v", err)
+				http.Error(w, "Error retrieving service records", http.StatusInternalServerError)
+				return
+			}
+		case servvicesList := <-readRecord.Result:
+			fmt.Println(servvicesList)
+			var slForm forms.ServiceRecordList_v1
+			slForm.NewForm()
+			slForm.List = servvicesList
+			updatedRecordBytes, err := usecases.Pack(&slForm, mediaType)
+			if err != nil {
+				log.Printf("error confirming new service: %s", err)
+				http.Error(w, "Error registering service", http.StatusInternalServerError)
+			}
+			w.Header().Set("Content-Type", mediaType)
+			w.WriteHeader(http.StatusOK)
+			_, err = w.Write([]byte(updatedRecordBytes))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		case <-time.After(5 * time.Second): // Optional timeout
+			http.Error(w, "Request timed out", http.StatusGatewayTimeout)
+			log.Println("Failure to process service discovery request")
 			return
 		}
-		fmt.Printf("The list of discovered services is %v+\n", dsListForm)
-
-		// send off the list back to the Orchestrator
-		w.Header().Set("Content-Type", headerContentType)
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write(payload)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
 	default:
 		http.Error(w, "Unsupported HTTP request method", http.StatusMethodNotAllowed)
 	}
+	// fmt.Println("Done querying the database")
 }
 
 // cleanDB deletes service records upon request (e.g., when a system shuts down)
@@ -269,16 +295,28 @@ func (ua *UnitAsset) cleanDB(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid record ID", http.StatusBadRequest)
 			return
 		}
-		deleteCompleteServiceById(ua, id)
-		if !ua.sched.RemoveTask(id) {
-			log.Printf("the scheduler had no task with id %d to remove", id)
+		// Create a struct to send on a channel to handle the request
+		addRecord := ServiceRegistryRequest{
+			Action: "delete",
+			Id:     int64(id),
+			Error:  make(chan error),
+		}
+
+		// Send request to add a record to the unit asset
+		ua.requests <- addRecord
+		// Check the error back from the unit asset
+		err = <-addRecord.Error
+		if err != nil {
+			log.Printf("error deleting the service with id: %d, %s\n", id, err)
+			http.Error(w, "Error deleting service", http.StatusInternalServerError)
+			return
 		}
 	default:
 		fmt.Fprintf(w, "unsupported http request method")
 	}
 }
 
-// roleStatus rerturn the current activity of a service registrar (i.e., leading or on stand by)
+// roleStatus returns the current activity of a service registrar (i.e., leading or on stand by)
 func (ua *UnitAsset) roleStatus(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
@@ -370,10 +408,11 @@ func (ua *UnitAsset) systemList(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		systemsList, err := getUniqueSystems(ua)
 		if err != nil {
-			fmt.Printf("system list error, %s", err)
+			http.Error(w, fmt.Sprintf("system list error: %s", err), http.StatusInternalServerError)
+			return
 		}
 		usecases.HTTPProcessGetRequest(w, r, systemsList)
 	default:
-		fmt.Fprintf(w, "unsupported http request method")
+		http.Error(w, "unsupported HTTP request method", http.StatusMethodNotAllowed)
 	}
 }

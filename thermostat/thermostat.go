@@ -1,10 +1,13 @@
 /*******************************************************************************
- * Copyright (c) 2024 Jan van Deventer
+ * Copyright (c) 2024 Synecdoque
  *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v2.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-2.0/
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, subject to the following conditions:
+ *
+ * The software is licensed under the MIT License. See the LICENSE file in this repository for details.
  *
  * Contributors:
  *   Jan A. van Deventer, Luleå - initial implementation
@@ -33,13 +36,13 @@ func main() {
 	// instantiate the System
 	sys := components.NewSystem("thermostat", ctx)
 
-	// Instatiate the Capusle
+	// Instantiate the husk
 	sys.Husk = &components.Husk{
 		Description: " is a controller for a consumed servo motor position based on a consumed temperature",
 		Certificate: "ABCD",
-		Details:     map[string][]string{"Developer": {"Arrowhead"}},
-		ProtoPort:   map[string]int{"https": 0, "http": 8670, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/master/thermostat",
+		Details:     map[string][]string{"Developer": {"Synecdoque"}},
+		ProtoPort:   map[string]int{"https": 0, "http": 20152, "coap": 0},
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/thermostat",
 	}
 
 	// instantiate a template unit asset
@@ -79,7 +82,7 @@ func main() {
 	time.Sleep(2 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
 }
 
-// Serving handles the resources services. NOTE: it exepcts those names from the request URL path
+// Serving handles the resources services. NOTE: it expects those names from the request URL path
 func (t *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch servicePath {
 	case "setpoint":
@@ -89,7 +92,7 @@ func (t *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath 
 	case "jitter":
 		t.variations(w, r)
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 
