@@ -64,7 +64,7 @@ func (ua *UnitAsset) GetDetails() map[string][]string {
 // ensure UnitAsset implements components.UnitAsset
 var _ components.UnitAsset = (*UnitAsset)(nil)
 
-//-------------------------------------Instatiate a unit asset template
+//-------------------------------------Instantiate a unit asset template
 
 // initTemplate initializes a UnitAsset with default values.
 func initTemplate() components.UnitAsset {
@@ -74,7 +74,7 @@ func initTemplate() components.UnitAsset {
 		SubPath:     "rotation",
 		Details:     map[string][]string{"Forms": {"SignalA_v1a"}, "Unit": {"percent", "rotational"}},
 		RegPeriod:   30,
-		Description: "informs of the servo's current postion (GET) or updates the position (PUT)",
+		Description: "informs of the servo's current position (GET) or updates the position (PUT)",
 	}
 
 	// var uat components.UnitAsset // this is an interface, which we then initialize
@@ -88,7 +88,7 @@ func initTemplate() components.UnitAsset {
 	return uat
 }
 
-//-------------------------------------Instatiate the unit assets based on configuration
+//-------------------------------------Instantiate the unit assets based on configuration
 
 // newResource creates the Resource resource with its pointers and channels based on the configuration using the tConfig structs
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {

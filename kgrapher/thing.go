@@ -189,7 +189,7 @@ func (ua *UnitAsset) assembleOntologies(w http.ResponseWriter) {
 		return
 	}
 
-	// Prepare the local cloud's semantic model by asking each system their semantic model
+	// Prepare the local cloud's knowledge graph by asking each system their their knowledeg graph
 	prefixes := make(map[string]bool)        // To store unique prefixes
 	processedBlocks := make(map[string]bool) // To track processed RDF blocks
 	var uniqueIndividuals []string           // To store unique RDF individuals
@@ -236,6 +236,7 @@ func (ua *UnitAsset) assembleOntologies(w http.ResponseWriter) {
 		}
 	}
 
+	// Construct the graph string
 	var graph string
 
 	// Write unique prefixes once
