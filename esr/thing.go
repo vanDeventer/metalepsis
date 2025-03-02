@@ -104,7 +104,7 @@ func initTemplate() components.UnitAsset {
 	unregisterService := components.Service{
 		Definition:  "unregister",
 		SubPath:     "unregister",
-		Details:     map[string][]string{"Forms": {"ID only"}},
+		Details:     map[string][]string{"Forms": {"ID_only"}},
 		Description: "removes a record (DELETE) based on record ID",
 	}
 
@@ -118,7 +118,7 @@ func initTemplate() components.UnitAsset {
 	// var uat components.UnitAsset // this is an interface, which we then initialize
 	uat := &UnitAsset{
 		Name:    "registry",
-		Details: map[string][]string{"Location": {"Local cloud"}},
+		Details: map[string][]string{"Location": {"LocalCloud"}},
 		ServicesMap: components.Services{
 			registerService.SubPath:   &registerService,
 			queryService.SubPath:      &queryService,
