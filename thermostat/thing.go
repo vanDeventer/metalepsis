@@ -246,7 +246,7 @@ func (ua *UnitAsset) processFeedbackLoop() {
 		return
 	}
 	// send the new valve state request
-	err = usecases.SetState(ua.CervicesMap["rotation"], ua.Owner, op)
+	_, err = usecases.SetState(ua.CervicesMap["rotation"], ua.Owner, op)
 	if err != nil {
 		log.Printf("cannot update valve state: %s\n", err)
 		return

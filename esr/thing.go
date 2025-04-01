@@ -129,7 +129,7 @@ func initTemplate() components.UnitAsset {
 	return uat
 }
 
-//-------------------------------------Instatiate unit asset(s) based on configuration
+//-------------------------------------Instantiate unit asset(s) based on configuration
 
 // newResource creates the unit asset with its pointers and channels based on the configuration using the uaConfig structs
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {

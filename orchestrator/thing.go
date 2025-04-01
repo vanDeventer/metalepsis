@@ -111,6 +111,17 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 
 //-------------------------------------Thing's resource functions
 
+// getServiceURL retrieves the service URL for a given ServiceQuest_v1.
+// It first checks if the leading registrar is still valid and updates it if necessary.
+// If no leading registrar is found, it iterates through the system's core services to find one.
+// Once a valid registrar is found, it sends a query to the registrar to get the service URL.
+//
+// Parameters:
+// - newQuest: The ServiceQuest_v1 containing the service request details.
+//
+// Returns:
+// - servLoc: A byte slice containing the service location in JSON format.
+// - err: An error if any issues occur during the process.
 func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []byte, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second) // Create a new context, with a 2-second timeout
 	defer cancel()
@@ -186,7 +197,7 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 	req.Header.Set("Content-Type", mediaType) // set the Content-Type header
 	req = req.WithContext(ctx)                // associate the cancellable context with the request
 
-	// forward the request /////////////////////////////////
+	// forward the request to the leading Service Registrar/////////////////////////////////
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {

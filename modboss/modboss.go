@@ -20,11 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net/http"
 	"time"
 
 	"github.com/sdoque/mbaigo/components"
+	"github.com/sdoque/mbaigo/forms"
 	"github.com/sdoque/mbaigo/usecases"
 )
 
@@ -84,22 +87,57 @@ func main() {
 	time.Sleep(3 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
 }
 
-// Serving handles the resources services. NOTE: it exepcts those names from the request URL path
+// Serving handles the resources services. NOTE: it expects those names from the request URL path
 func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch servicePath {
 
 	case "access":
 		ua.access(w, r)
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 
 func (ua *UnitAsset) access(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		vauleForm := ua.read()
-		usecases.HTTPProcessGetRequest(w, r, vauleForm)
+		valueForm := ua.read()
+		usecases.HTTPProcessGetRequest(w, r, valueForm)
+	case "POST":
+		contentType := r.Header.Get("Content-Type")
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			fmt.Println("Error parsing media type:", err)
+			return
+		}
+
+		defer r.Body.Close()
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("error reading service discovery request body: %v", err)
+			return
+		}
+		newState, err := usecases.Unpack(bodyBytes, mediaType)
+		if err != nil {
+			log.Printf("error extracting the service discovery request %v\n", err)
+			return
+		}
+		// Perform a type assertion to convert the received form to the expected type
+		switch ns := newState.(type) {
+		case *forms.SignalA_v1a:
+			// v is of type *forms.SignalA_v1a
+			fmt.Printf("Received analog signal: %.2f %s\n", ns.Value, ns.Unit)
+			ua.write(ns.Value)
+		case *forms.SignalB_v1a:
+			// v is of type *forms.SignalB_v1a
+			fmt.Printf("Received digital signal: %v\n", ns.Value)
+			ua.write(ns.Value)
+		default:
+			log.Printf("Problem unpacking the new value for %s: unsupported form type %T", ua.Name, ns)
+			http.Error(w, "Unsupported form type", http.StatusBadRequest)
+			return
+		}
+
 	default:
 		http.Error(w, "Method is not supported.", http.StatusNotFound)
 	}

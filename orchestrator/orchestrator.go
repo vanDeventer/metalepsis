@@ -36,7 +36,7 @@ func main() {
 	// instantiate the System
 	sys := components.NewSystem("orchestrator", ctx)
 
-	// Instatiate the Capusle
+	// Instantiate the husk
 	sys.Husk = &components.Husk{
 		Description: "provides the URL of a currently available and authorized sought service",
 		Certificate: "ABCD",
@@ -82,17 +82,18 @@ func main() {
 	time.Sleep(2 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
 }
 
-// Serving handles the resources services. NOTE: it exepcts those names from the request URL path
+// Serving handles the resources services. NOTE: it expects those names from the request URL path
 func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch servicePath {
 	case "squest":
 		ua.orchestrate(w, r)
 
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 
+// orchestrate receives a service discovery request and responds with the selected service location if found
 func (ua *UnitAsset) orchestrate(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "POST":
@@ -121,10 +122,6 @@ func (ua *UnitAsset) orchestrate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// questForm, err := usecases.ExtractQuestForm(bodyBytes)
-		if err != nil {
-			log.Printf("error extracting the discovery request %v\n", err)
-		}
 		servLocation, err := ua.getServiceURL(*qf)
 		if err != nil {
 			log.Println(err)

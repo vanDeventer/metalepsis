@@ -44,7 +44,7 @@ func main() {
 
 	// Instatiate the Capusle
 	sys.Husk = &components.Husk{
-		Description: "is an Arrowhead mandatory core sysstem that keeps track of the currently available sevices.",
+		Description: "is an Arrowhead mandatory core system that keeps track of the currently available services.",
 		Details:     map[string][]string{"Developer": {"Synecdoque"}},
 		ProtoPort:   map[string]int{"https": 0, "http": 20102, "coap": 0},
 		InfoLink:    "https://github.com/sdoque/systems/tree/main/esr",
@@ -90,7 +90,7 @@ func main() {
 
 // ---------------------------------------------------------------------------- end of main()
 
-// Serving handles the resources services. NOTE: it exepcts those names from the request URL path
+// Serving handles the resources services. NOTE: it expects those names from the request URL path
 func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch servicePath {
 	case "register":
@@ -104,7 +104,7 @@ func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath
 	case "syslist":
 		ua.systemList(w, r)
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 
