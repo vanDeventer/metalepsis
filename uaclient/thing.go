@@ -108,8 +108,8 @@ func initTemplate() components.UnitAsset {
 	// var uat components.UnitAsset // this is an interface, which we then initialize
 	uat := &UnitAsset{
 		Name:          "PLC with OPC UA server",
-		Details:       map[string][]string{"PLC": {"Prosys OPC UA Simulation Server"}, "Location": {"Line 1"}, "KKS": {"YLLCP001"}},
-		ServerAdrress: "opc.tcp://localhost:53530/OPCUA/SimulationServer",
+		Details:       map[string][]string{"PLC": {"Prosys_Simulation_Server"}, "Location": {"Line 1"}, "KKS": {"YLLCP001"}},
+		ServerAdrress: "opc.tcp://192.168.1.2:53530/OPCUA/SimulationServer",
 		ServicesMap: components.Services{
 			browse.SubPath: &browse,
 			access.SubPath: &access,
