@@ -1,10 +1,13 @@
 /*******************************************************************************
- * Copyright (c) 2024 Jan van Deventer
+ * Copyright (c) 2024 Synecdoque
  *
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Eclipse Public License v2.0
- * which accompanies this distribution, and is available at
- * http://www.eclipse.org/legal/epl-2.0/
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, subject to the following conditions:
+ *
+ * The software is licensed under the MIT License. See the LICENSE file in this repository for details.
  *
  * Contributors:
  *   Jan A. van Deventer, Luleå - initial implementation
@@ -66,7 +69,7 @@ func (ua *UnitAsset) GetDetails() map[string][]string {
 // ensure UnitAsset implements components.UnitAsset (this check is done at during the compilation)
 var _ components.UnitAsset = (*UnitAsset)(nil)
 
-//-------------------------------------Instatiate a unit asset template
+//-------------------------------------Instantiate a unit asset template
 
 // initTemplate initializes a UnitAsset with default values.
 func initTemplate() components.UnitAsset {
@@ -75,7 +78,7 @@ func initTemplate() components.UnitAsset {
 		SubPath:     "setpoint",
 		Details:     map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}},
 		RegPeriod:   120,
-		CUnit:       "Eur/kWh",
+		CUnit:       "Eur/h",
 		Description: "provides the current thermal setpoint (GET) or sets it (PUT)",
 	}
 	thermalErrorService := components.Service{
@@ -83,7 +86,7 @@ func initTemplate() components.UnitAsset {
 		SubPath:     "thermalerror",
 		Details:     map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}},
 		RegPeriod:   120,
-		Description: "provides the current difference between the setpoint and the temperature (GET)",
+		Description: "provides the current difference between the set point and the temperature (GET)",
 	}
 	jitterService := components.Service{
 		Definition:  "jitter",
@@ -111,25 +114,25 @@ func initTemplate() components.UnitAsset {
 	return uat
 }
 
-//-------------------------------------Instatiate the unit assets based on configuration
+//-------------------------------------Instantiate the unit assets based on configuration
 
 // newResource creates the Resource resource with its pointers and channels based on the configuration using the tConig structs
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {
-	// deterimine the protocols that the system supports
+	// determine the protocols that the system supports
 	sProtocols := components.SProtocols(sys.Husk.ProtoPort)
 	// instantiate the consumed services
 	t := &components.Cervice{
-		Name:   "temperature",
-		Protos: sProtocols,
-		Url:    make([]string, 0),
+		Definition: "temperature",
+		Protos:     sProtocols,
+		Nodes:      make(map[string][]string, 0),
 	}
 
 	r := &components.Cervice{
-		Name:   "rotation",
-		Protos: sProtocols,
-		Url:    make([]string, 0),
+		Definition: "rotation",
+		Protos:     sProtocols,
+		Nodes:      make(map[string][]string, 0),
 	}
-	// intantiate the unit asset
+	// instantiate the unit asset
 	ua := &UnitAsset{
 		Name:        uac.Name,
 		Owner:       sys,
@@ -141,19 +144,12 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 		Lambda:      uac.Lambda,
 		Ki:          uac.Ki,
 		CervicesMap: components.Cervices{
-			t.Name: t,
-			r.Name: r,
+			t.Definition: t,
+			r.Definition: r,
 		},
 	}
-
-	var ref components.Service
-	for _, s := range servs {
-		if s.Definition == "setpoint" {
-			ref = s
-		}
-	}
-
-	ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, ref.Details)
+	// thermalUnit := ua.ServicesMap["setpoint"].Details["Unit"][0] // the measurement done below are still in Celsius, so allowing it to be configurable does not really make sense at this point
+	ua.CervicesMap["temperature"].Details = components.MergeDetails(ua.Details, map[string][]string{"Unit": {"Celsius"}, "Forms": {"SignalA_v1a"}})
 	ua.CervicesMap["rotation"].Details = components.MergeDetails(ua.Details, map[string][]string{"Unit": {"Percent"}, "Forms": {"SignalA_v1a"}})
 
 	// start the unit asset(s)
@@ -170,7 +166,7 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 func (ua *UnitAsset) getSetPoint() (f forms.SignalA_v1a) {
 	f.NewForm()
 	f.Value = ua.Setpt
-	f.Unit = "Celcius"
+	f.Unit = "Celsius"
 	f.Timestamp = time.Now()
 	return f
 }
@@ -181,7 +177,7 @@ func (ua *UnitAsset) setSetPoint(f forms.SignalA_v1a) {
 	log.Printf("new set point: %.1f", f.Value)
 }
 
-// getErrror fills out a signal form with the currrent thermal setpoint and temperature
+// getErrror fills out a signal form with the current thermal setpoint and temperature
 func (ua *UnitAsset) getError() (f forms.SignalA_v1a) {
 	f.NewForm()
 	f.Value = ua.deviation
@@ -250,7 +246,7 @@ func (ua *UnitAsset) processFeedbackLoop() {
 		return
 	}
 	// send the new valve state request
-	err = usecases.SetState(ua.CervicesMap["rotation"], ua.Owner, op)
+	_, err = usecases.SetState(ua.CervicesMap["rotation"], ua.Owner, op)
 	if err != nil {
 		log.Printf("cannot update valve state: %s\n", err)
 		return
@@ -264,7 +260,7 @@ func (ua *UnitAsset) processFeedbackLoop() {
 	ua.jitter = time.Since(jitterStart)
 }
 
-// calculateOutput is the actual P contoroller (no real close loop yet)
+// calculateOutput is the actual P controller (no real close loop yet)
 func (ua *UnitAsset) calculateOutput(thermDiff float64) float64 {
 	vPosition := ua.Kp*thermDiff + 50 // if the error is 0, the position is at 50%
 

@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -26,7 +27,15 @@ import (
 
 	"github.com/sdoque/mbaigo/components"
 	"github.com/sdoque/mbaigo/forms"
+	"golang.org/x/exp/rand"
 )
+
+// Define the types of requests the measurement manager can handle
+type STray struct {
+	Action string
+	ValueP chan forms.SignalA_v1a
+	Error  chan error
+}
 
 //-------------------------------------Define the unit asset
 
@@ -38,8 +47,9 @@ type UnitAsset struct {
 	ServicesMap components.Services `json:"-"`
 	CervicesMap components.Cervices `json:"-"`
 	//
-	temperature float64      `json:"-"`
-	TempChan    chan float64 `json:"-"` // Add a channel for temperature readings
+	temperature float64    `json:"-"`
+	tStamp      time.Time  `json:"-"`
+	trayChan    chan STray `json:"-"` // Add a channel for temperature readings
 }
 
 // GetName returns the name of the Resource.
@@ -89,7 +99,7 @@ func initTemplate() components.UnitAsset {
 	return uat
 }
 
-//-------------------------------------Instatiate the unit assets based on configuration
+//-------------------------------------Instantiate the unit assets based on configuration
 
 // newResource creates the Resource resource with its pointers and channels based on the configuration
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {
@@ -98,95 +108,115 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 		Owner:       sys,
 		Details:     uac.Details,
 		ServicesMap: components.CloneServices(servs),
-		TempChan:    make(chan float64, 1), // Initialize the channel with a buffer
+		trayChan:    make(chan STray), // Initialize the channel
 	}
 
 	// start the unit asset(s)
-	// Start a single goroutine to update ua.temperature from ua.TempChan
-	go func() {
-		for temp := range ua.TempChan {
-			// here could use synchronization mechanisms if multiple goroutines access ua.temperature
-			ua.temperature = temp
-		}
-	}()
 	go ua.readTemperature(sys.Ctx)
-	// }
 
 	return ua, func() {
-		log.Println("disconnecting from sensors")
+		log.Printf("disconnecting from %s\n", ua.Name)
 	}
 }
 
-//-------------------------------------Unit asset's resource functions
+//-------------------------------------Unit asset's functionalities
 
 // readTemperature obtains the temperature from respective ds18b20 resource at regular intervals
 func (ua *UnitAsset) readTemperature(ctx context.Context) {
-	// the responsible channel writing routine closes the channel when exiting
-	defer close(ua.TempChan)
+	defer close(ua.trayChan) // Ensure the channel is closed when the goroutine exits
 
-	// Initialize the timer outside the loop for the first delay
-	timer := time.NewTimer(2 * time.Second)
-	// ensure the timer is stopped to avoid resource leak
-	defer timer.Stop()
+	randomdDelay()
 
-	for {
-		// Wait for the timer or context cancellation
-		select {
-		case <-ctx.Done():
-			return // exit the goroutine if the context is done
-		case <-timer.C: // Wait for the timer to fire
+	// Create a ticker that triggers every 2 seconds
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop() // Clean up the ticker when done
 
-			// path to the DS18B20 sensor device file on a Raspberry Pi
-			deviceFile := "/sys/bus/w1/devices/" + ua.Name + "/w1_slave"
+	tempChan := make(chan float64) // Channel for latest temperature readings
+	tStampChan := make(chan time.Time)
 
-			// Read the raw temperature value from the device file
-			var rawData []byte
-			var err error
-			// keep trying to read until rawData is not empty
-			for {
-				rawData, err = os.ReadFile(deviceFile)
+	// Start a separate goroutine for temperature reading
+	go func() {
+		for {
+			select {
+			case <-ctx.Done(): // Stop when the context is canceled
+				return
+
+			case <-ticker.C: // Read temperature at regular intervals
+				deviceFile := "/sys/bus/w1/devices/" + ua.Name + "/w1_slave"
+				rawData, err := os.ReadFile(deviceFile)
 				if err != nil {
-					log.Printf("error reading temperature file: %s, error: %v\n", deviceFile, err)
+					log.Printf("Error reading temperature file: %s, error: %v\n", deviceFile, err)
+					continue // Retry on the next cycle
+				}
+
+				if len(rawData) == 0 {
+					log.Printf("Empty data read from temperature file: %s\n", deviceFile)
+					continue
+				}
+
+				rawValue := strings.Split(string(rawData), "\n")[1]
+				if !strings.Contains(rawValue, "t=") {
+					log.Printf("Invalid temperature data: %s\n", rawData)
+					continue
+				}
+
+				tempStr := strings.Split(rawValue, "t=")[1]
+				temp, err := strconv.ParseFloat(tempStr, 64)
+				if err != nil {
+					log.Printf("Error parsing temperature: %v\n", err)
+					continue
+				}
+
+				// Send the temperature and timestamp back to the main loop
+				select {
+				case tempChan <- temp / 1000.0:
+					tStampChan <- time.Now()
+				case <-ctx.Done(): // Stop the goroutine if context is canceled
 					return
 				}
-
-				if len(rawData) > 0 {
-					break // exit the loop if data is successfully read
-				}
-				log.Printf("empty data read from temperature file: %s, retrying...\n", deviceFile)
-				time.Sleep(1 * time.Second) // wait before retrying
-			}
-
-			// parse the raw temperature value
-			rawValue := strings.Split(string(rawData), "\n")[1]
-			if !strings.Contains(rawValue, "t=") {
-				log.Println("invalid temperature data: %", rawData)
-				return // and exit the goroutine
-			}
-			tempStr := strings.Split(rawValue, "t=")[1]
-			temp, err := strconv.ParseFloat(tempStr, 64)
-			if err != nil {
-				log.Println("error reading temperature:", err)
-				return // and exit the goroutine
-			}
-			select {
-			case ua.TempChan <- temp / 1000.0: // send temperature reading to the channel
-			case <-ctx.Done():
-				return // exit if the context is cancelled
 			}
 		}
+	}()
 
-		timer.Reset(2 * time.Second) // Reset the timer for the next read
+	for {
+		select {
+		case <-ctx.Done(): // Shutdown
+			log.Println("Context canceled, stopping temperature readings.")
+			return
+
+		case temp := <-tempChan: // Update temperature and timestamp
+			ua.temperature = temp
+			ua.tStamp = <-tStampChan
+
+		case order := <-ua.trayChan: // Address a GET request
+			var f forms.SignalA_v1a
+			f.NewForm()
+			f.Value = ua.temperature
+			f.Unit = "Celsius"
+			f.Timestamp = ua.tStamp
+			order.ValueP <- f
+		}
 	}
 }
 
-// serveTemperature fills out a signal form with the value of temperature of the sensor (but does not check if it is functional)
-func serveTemperature(sensor *UnitAsset) (f forms.SignalA_v1a) {
+// randomDelay is used to have the requests to multiple 1-wire sensor out of synch to free the bus. (This is a quick hack :-( )
+func randomdDelay() {
+	rand.Seed(uint64(time.Now().UnixNano()))
 
-	f.NewForm()
-	// Convert the raw temperature value to degrees Celsius
-	f.Value = sensor.temperature
-	f.Unit = "Celcius"
-	f.Timestamp = time.Now()
-	return f
+	// Constants
+	baseDelay := 93 * time.Millisecond           // 0.093 seconds
+	maxMultiples := int(math.Floor(1.0 / 0.093)) // Calculate the max multiples (10 in this case)
+
+	// Generate a random multiplier (1 to maxMultiples - 1)
+	randomMultiplier := rand.Intn(maxMultiples-1) + 1
+
+	// Calculate the delay
+	delay := time.Duration(randomMultiplier) * baseDelay
+
+	log.Printf("Random delay: %v\n", delay)
+
+	// Sleep for the random duration
+	time.Sleep(delay)
+
+	log.Println("Program resumed after delay.")
 }

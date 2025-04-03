@@ -79,7 +79,7 @@ func initTemplate() components.UnitAsset {
 	queryService := components.Service{
 		Definition:  "query",
 		SubPath:     "query",
-		Details:     map[string][]string{"Forms": usecases.ServQustForms()},
+		Details:     map[string][]string{"Forms": usecases.ServQuestForms()},
 		Description: "retrieves all currently available services using a GET request [accessed via a browser by a deployment technician] or retrieves a specific set of services using a POST request with a payload [initiated by the Orchestrator]",
 	}
 	unregisterService := components.Service{

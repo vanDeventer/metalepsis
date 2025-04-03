@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"time"
 
@@ -35,13 +36,13 @@ func main() {
 	// instantiate the System
 	sys := components.NewSystem("orchestrator", ctx)
 
-	// Instatiate the Capusle
+	// Instantiate the husk
 	sys.Husk = &components.Husk{
 		Description: "provides the URL of a currently available and authorized sought service",
 		Certificate: "ABCD",
 		Details:     map[string][]string{"Developer": {"Arrowhead"}},
-		ProtoPort:   map[string]int{"https": 0, "http": 8445, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/systems/tree/master/orchestrator",
+		ProtoPort:   map[string]int{"https": 0, "http": 20103, "coap": 0},
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/orchestrator",
 	}
 
 	// instantiate a template unit asset
@@ -78,31 +79,39 @@ func main() {
 	<-sys.Sigs // wait for a SIGINT (Ctrl+C) signal
 	fmt.Println("\nshuting down system", sys.Name)
 	cancel()                    // cancel the context, signaling the goroutines to stop
-	time.Sleep(3 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
+	time.Sleep(2 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
 }
 
-// Serving handles the resources services. NOTE: it exepcts those names from the request URL path
-func (t *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
+// Serving handles the resources services. NOTE: it expects those names from the request URL path
+func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch servicePath {
 	case "squest":
-		t.orchestrate(w, r)
+		ua.orchestrate(w, r)
 
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 
+// orchestrate receives a service discovery request and responds with the selected service location if found
 func (ua *UnitAsset) orchestrate(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "POST":
+		contentType := r.Header.Get("Content-Type")
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			fmt.Println("Error parsing media type:", err)
+			return
+		}
+
 		defer r.Body.Close()
 		bodyBytes, err := io.ReadAll(r.Body) // Use io.ReadAll instead of ioutil.ReadAll
 		if err != nil {
 			log.Printf("error reading discovery request body: %v\n", err)
 			return
 		}
-		headerContentTtype := r.Header.Get("Content-Type")
-		questForm, err := usecases.Unpack(bodyBytes, headerContentTtype)
+
+		questForm, err := usecases.Unpack(bodyBytes, mediaType)
 		if err != nil {
 			log.Printf("error extracting the discovery request %v\n", err)
 		}
@@ -113,10 +122,6 @@ func (ua *UnitAsset) orchestrate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// questForm, err := usecases.ExtractQuestForm(bodyBytes)
-		if err != nil {
-			log.Printf("error extracting the discovery request %v\n", err)
-		}
 		servLocation, err := ua.getServiceURL(*qf)
 		if err != nil {
 			log.Println(err)

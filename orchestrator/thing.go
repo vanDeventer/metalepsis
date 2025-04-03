@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -28,6 +27,7 @@ import (
 
 	"github.com/sdoque/mbaigo/components"
 	"github.com/sdoque/mbaigo/forms"
+	"github.com/sdoque/mbaigo/usecases"
 )
 
 //-------------------------------------Define the Thing's resource
@@ -66,7 +66,7 @@ func (ua *UnitAsset) GetDetails() map[string][]string {
 // ensure UnitAsset implements components.UnitAsset (this check is done at during the compilation)
 var _ components.UnitAsset = (*UnitAsset)(nil)
 
-//-------------------------------------Instatiate a unit asset template
+//-------------------------------------Instantiate a unit asset template
 
 // initTemplate initializes a UnitAsset with default values.
 func initTemplate() components.UnitAsset {
@@ -89,9 +89,9 @@ func initTemplate() components.UnitAsset {
 	return uat
 }
 
-//-------------------------------------Instatiate the unit assets based on configuration
+//-------------------------------------Instantiate the unit assets based on configuration
 
-// newResource creates the Resource resource with its pointers and channels based on the configuration using the tConig structs
+// newResource creates the Resource resource with its pointers and channels based on the configuration using the template
 func newResource(uac UnitAsset, sys *components.System, servs []components.Service) (components.UnitAsset, func()) {
 	// var ua components.UnitAsset // this is an interface, which we then initialize
 	ua := &UnitAsset{ // this is an interface, which we then initialize
@@ -111,7 +111,17 @@ func newResource(uac UnitAsset, sys *components.System, servs []components.Servi
 
 //-------------------------------------Thing's resource functions
 
-// getServiceURL (works only on an RPi) reads the input file w1_slave for the specific 1 wire sensor
+// getServiceURL retrieves the service URL for a given ServiceQuest_v1.
+// It first checks if the leading registrar is still valid and updates it if necessary.
+// If no leading registrar is found, it iterates through the system's core services to find one.
+// Once a valid registrar is found, it sends a query to the registrar to get the service URL.
+//
+// Parameters:
+// - newQuest: The ServiceQuest_v1 containing the service request details.
+//
+// Returns:
+// - servLoc: A byte slice containing the service location in JSON format.
+// - err: An error if any issues occur during the process.
 func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []byte, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second) // Create a new context, with a 2-second timeout
 	defer cancel()
@@ -127,7 +137,7 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 			return // Skip to the next iteration of the loop
 		}
 
-		// Read from resp.Body and then close it directly after
+		// Read from status resp.Body and then close it directly after
 		bodyBytes, errs := io.ReadAll(resp.Body)
 		resp.Body.Close() // Close the body directly after reading from it
 		if errs != nil {
@@ -148,7 +158,7 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 			if core.Name == "serviceregistrar" {
 				resp, err := http.Get(core.Url + "/status")
 				if err != nil {
-					fmt.Println("Error checking service registar status:", err)
+					fmt.Println("Error checking service registrar status:", err)
 					ua.leadingRegistrar = nil // clear the leading registrar record
 					continue                  // Skip to the next iteration of the loop
 				}
@@ -172,7 +182,8 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 	// Create a new HTTP request to the the Service Registrar
 
 	// Create buffer to save a copy of the request body
-	jsonQF, err := json.MarshalIndent(newQuest, "", "  ")
+	mediaType := "application/json"
+	jsonQF, err := usecases.Pack(&newQuest, mediaType)
 	if err != nil {
 		log.Printf("problem encountered when marshalling the service quest\n")
 		return servLoc, err
@@ -183,10 +194,10 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 	if err != nil {
 		return servLoc, err
 	}
-	req.Header.Set("Content-Type", "application/json") // set the Content-Type header
-	req = req.WithContext(ctx)                         // associate the cancellable context with the request
+	req.Header.Set("Content-Type", mediaType) // set the Content-Type header
+	req = req.WithContext(ctx)                // associate the cancellable context with the request
 
-	// forward the request /////////////////////////////////
+	// forward the request to the leading Service Registrar/////////////////////////////////
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -196,60 +207,42 @@ func (ua *UnitAsset) getServiceURL(newQuest forms.ServiceQuest_v1) (servLoc []by
 	defer resp.Body.Close()
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error reading discoverry response body: %v", err)
+		log.Printf("Error reading discovery response body: %v", err)
 		return servLoc, err
 	}
-	serviceList, err := extractServList(respBytes)
+	fmt.Printf("\n%v\n", string(respBytes))
+	serviceListf, err := usecases.Unpack(respBytes, mediaType)
 	if err != nil {
-		log.Print("Error extracting discoverry reply", err)
+		log.Print("Error extracting discovery reply ", err)
 		return servLoc, err
 	}
+
+	// Perform a type assertion to convert the returned Form to SignalA_v1a
+	serviceList, ok := serviceListf.(*forms.ServiceRecordList_v1)
+	if !ok {
+		log.Println("problem asserting the type of the service list form")
+		return
+	}
+
 	if len(serviceList.List) == 0 {
 		err = fmt.Errorf("unable to locate any such service: %s", newQuest.ServiceDefinition)
 		return
 	}
 
 	fmt.Printf("/n the length of the service list is: %d\n", len(serviceList.List))
-	serviceLocation := selectService(serviceList)
+	serviceLocation := selectService(*serviceList)
 	payload, err := json.MarshalIndent(serviceLocation, "", "  ")
 	fmt.Printf("the service location is %+v\n", serviceLocation)
 	return payload, err
 }
 
-func extractServList(bodyBytes []byte) (rec forms.ServiceRecordList_v1, err error) {
-	var jsonData map[string]interface{}
-	err = json.Unmarshal(bodyBytes, &jsonData)
-	if err != nil {
-		log.Printf("Error unmarshaling JSON data: %v", err)
-		return
-	}
-	formVersion, ok := jsonData["Version"].(string)
-	if !ok {
-		log.Printf("Error: 'version' key not found in JSON data")
-		return
-	}
-	switch formVersion {
-	case "ServiceRecordList_v1":
-		var f forms.ServiceRecordList_v1
-		err = json.Unmarshal(bodyBytes, &f)
-		if err != nil {
-			log.Println("Unable to extract discoverry reply")
-			return
-		}
-		rec = f
-	default:
-		err = errors.New("unsupported service discoverry form version")
-	}
-	return
-}
-
-func selectService(serviceList forms.ServiceRecordList_v1) (serv forms.ServicePoint_v1) {
+func selectService(serviceList forms.ServiceRecordList_v1) (sp forms.ServicePoint_v1) {
 	rec := serviceList.List[0]
-	serv.NewForm()
-	serv.ProviderName = rec.SystemName
-	serv.ProviderCertificate = rec.Certificate
-	serv.ServiceDefinition = rec.ServiceDefinition
-	serv.Details = rec.Details
-	serv.ServLocation = "http://" + rec.IPAddresses[0] + ":" + strconv.Itoa(rec.ProtoPort["http"]) + "/" + rec.SystemName + "/" + rec.SubPath
+	sp.NewForm()
+	sp.ProviderName = rec.SystemName
+	sp.ServiceDefinition = rec.ServiceDefinition
+	sp.Details = rec.Details
+	sp.ServLocation = "http://" + rec.IPAddresses[0] + ":" + strconv.Itoa(rec.ProtoPort["http"]) + "/" + rec.SystemName + "/" + rec.SubPath
+	sp.ServNode = rec.ServiceNode
 	return
 }

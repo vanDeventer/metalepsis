@@ -33,12 +33,12 @@ func main() {
 	// instantiate the System
 	sys := components.NewSystem("parallax", ctx)
 
-	// instatiate the husk
+	// instantiate the husk
 	sys.Husk = &components.Husk{
 		Description: " provides a rotation service using a standard servo motor driven with PWM",
 		Details:     map[string][]string{"Developer": {"Arrowhead"}},
-		ProtoPort:   map[string]int{"https": 0, "http": 8693, "coap": 0},
-		InfoLink:    "https://github.com/sdoque/mbaigo/tree/master/parallax",
+		ProtoPort:   map[string]int{"https": 0, "http": 20151, "coap": 0},
+		InfoLink:    "https://github.com/sdoque/systems/tree/main/parallax",
 	}
 
 	// instantiate a template unit asset
@@ -80,13 +80,13 @@ func main() {
 	time.Sleep(3 * time.Second) // allow the go routines to be executed, which might take more time than the main routine to end
 }
 
-// Serving handles the resources services. NOTE: it exepcts those names from the request URL path
+// Serving handles the resources services. NOTE: it expects those names from the request URL path
 func (ua *UnitAsset) Serving(w http.ResponseWriter, r *http.Request, servicePath string) {
 	switch servicePath {
 	case "rotation":
 		ua.rotation(w, r)
 	default:
-		http.Error(w, "Invalid service request [Do not modify the services subpath in the configurration file]", http.StatusBadRequest)
+		http.Error(w, "Invalid service request [Do not modify the services subpath in the configuration file]", http.StatusBadRequest)
 	}
 }
 
